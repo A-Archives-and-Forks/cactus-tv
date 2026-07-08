@@ -3,7 +3,7 @@ import { constants } from 'node:fs';
 
 const required = [
   'public/index.html', 'public/admin.html', 'public/styles.css', 'public/_headers',
-  'public/js/app.js', 'public/js/admin.js', 'public/js/api.js', 'public/js/player.js',
+  'public/js/app.js', 'public/js/admin.js', 'public/js/api.js', 'public/js/player.js', 'public/js/player-ui.js',
   'public/vendor/hls.min.js', 'functions/_middleware.ts', 'functions/_shared/auth.ts',
   'functions/api/health.ts', 'functions/api/admin/providers.ts',
   'migrations/0001_init.sql', 'DEPLOY.md', 'LICENSE', 'THIRD_PARTY_NOTICES.md',
