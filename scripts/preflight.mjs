@@ -2,7 +2,7 @@ import { access, readFile, stat } from 'node:fs/promises';
 import { constants } from 'node:fs';
 
 const required = [
-  'public/index.html', 'public/admin.html', 'public/styles.css', 'public/_headers',
+  'public/index.html', 'public/admin.html', 'public/styles.css', 'public/_headers', 'public/_redirects',
   'public/js/app.js', 'public/js/admin.js', 'public/js/api.js', 'public/js/player.js', 'public/js/player-ui.js',
   'public/vendor/hls.min.js', 'functions/_middleware.ts', 'functions/_shared/auth.ts',
   'functions/api/health.ts', 'functions/api/admin/providers.ts',
