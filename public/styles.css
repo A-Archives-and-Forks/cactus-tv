@@ -1268,3 +1268,92 @@ footer { display: flex; justify-content: space-between; gap: 30px; width: calc(1
     contain: layout style;
   }
 }
+
+/* v0.6.0 resilient player */
+.player-dialog.dialog-fallback-open,
+.sheet.dialog-fallback-open,
+.settings-dialog.dialog-fallback-open { display: block; position: fixed; z-index: 1000; }
+.player-control-button:focus-visible,
+.player-select-wrap select:focus-visible,
+.player-tools button:focus-visible,
+.player-tools select:focus-visible,
+.player-tools input:focus-visible,
+.video-shell:focus-visible {
+  outline: 3px solid #fff;
+  outline-offset: 2px;
+  box-shadow: 0 0 0 5px rgba(109,255,154,.42);
+}
+.player-control-button.active { background: rgba(109,255,154,.22); color: var(--green); }
+.player-tools-toggle { display: none; }
+.player-diagnostics-panel {
+  position: absolute;
+  z-index: 9;
+  top: 14px;
+  left: 14px;
+  max-width: min(360px, calc(100% - 28px));
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px solid rgba(255,255,255,.2);
+  border-radius: 6px;
+  background: rgba(0,0,0,.78);
+  color: #e8e8e8;
+  font: 11px/1.65 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  white-space: pre-wrap;
+  pointer-events: none;
+  backdrop-filter: blur(8px);
+}
+
+@media (max-width: 700px) {
+  .player-tools-toggle { display: grid; }
+  .player-control-right { min-width: 0; }
+  .player-control-right .player-select-wrap:not(.hidden) { max-width: 76px; }
+  .player-skip-button { display: grid !important; min-width: 31px; width: 31px; }
+  .player-diagnostics-panel { top: 8px; left: 8px; max-width: calc(100% - 16px); padding: 9px 10px; font-size: 9px; backdrop-filter: none; }
+}
+
+@media (max-width: 900px) and (orientation: landscape) {
+  .player-dialog { position: relative; height: 100vh; height: 100dvh; overflow: hidden; }
+  .player-dialog .player-head {
+    position: absolute;
+    z-index: 12;
+    top: 0;
+    right: 0;
+    left: 0;
+    display: flex;
+    min-height: 48px;
+    padding: max(6px,env(safe-area-inset-top)) max(8px,env(safe-area-inset-right)) 6px max(10px,env(safe-area-inset-left));
+    border: 0;
+    background: linear-gradient(180deg,rgba(0,0,0,.76),transparent);
+    pointer-events: none;
+  }
+  .player-dialog .player-head .player-title-wrap { opacity: 0; }
+  .player-dialog .player-head .sheet-close { display: grid; pointer-events: auto; background: rgba(0,0,0,.58); }
+  .player-dialog .player-tools {
+    position: absolute;
+    z-index: 13;
+    top: max(52px,calc(env(safe-area-inset-top) + 46px));
+    right: max(10px,env(safe-area-inset-right));
+    bottom: auto;
+    left: auto;
+    width: min(330px,calc(100% - 20px));
+    max-height: calc(100vh - 116px);
+    max-height: calc(100dvh - 116px);
+    display: none;
+    align-items: stretch;
+    flex-direction: column;
+    gap: 10px;
+    min-height: 0;
+    padding: 13px;
+    overflow-y: auto;
+    border: 1px solid rgba(255,255,255,.18);
+    border-radius: 8px;
+    background: rgba(13,13,13,.96);
+    box-shadow: 0 18px 48px rgba(0,0,0,.55);
+  }
+  .player-dialog.tools-open .player-tools { display: flex; }
+  .player-dialog .player-tools label,
+  .player-dialog .player-tools select,
+  .player-dialog .player-source-switch { width: 100%; }
+  .player-dialog .video-shell { height: 100vh; height: 100dvh; }
+  .player-tools-toggle { display: grid; }
+}
