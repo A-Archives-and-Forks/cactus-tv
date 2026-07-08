@@ -7,10 +7,10 @@
   <meta name="description" content="Cactus TV" />
   <title>Cactus TV</title>
   <link rel="icon" href="/assets/cactus.svg" type="image/svg+xml" />
-  <link rel="modulepreload" href="/js/app.js?v=0.6.0" />
-  <link rel="modulepreload" href="/js/api.js?v=0.6.0" />
-  <link rel="modulepreload" href="/js/storage.js?v=0.6.0" />
-  <link rel="stylesheet" href="/styles.css?v=0.6.0" />
+  <link rel="modulepreload" href="/js/app.js?v=0.6.1" />
+  <link rel="modulepreload" href="/js/api.js?v=0.6.1" />
+  <link rel="modulepreload" href="/js/storage.js?v=0.6.1" />
+  <link rel="stylesheet" href="/styles.css?v=0.6.1" />
 </head>
 <body>
   <header class="topbar" id="topbar">
@@ -107,6 +107,7 @@
     </div>
     <div id="videoShell" class="video-shell controls-visible" tabindex="0" aria-label="视频播放器">
       <video id="videoPlayer" playsinline preload="auto"></video>
+      <button id="playerLock" class="player-lock-button" type="button" aria-label="锁定播放器" title="锁定播放器"></button>
       <div id="playerLoading" class="player-loading">
         <span class="player-spinner" aria-hidden="true"></span>
         <span id="playerLoadingText">正在加载…</span>
@@ -138,19 +139,20 @@
             <span class="player-time"><span id="playerCurrentTime">0:00</span><i>/</i><span id="playerDuration">0:00</span></span>
           </div>
           <div class="player-control-right">
-            <label class="player-select-wrap hidden" aria-label="清晰度"><select id="playerQuality" disabled><option value="-1">自动</option></select></label>
-            <label class="player-select-wrap hidden" aria-label="音轨"><select id="playerAudioTrack" disabled><option value="-1">默认音轨</option></select></label>
-            <label class="player-select-wrap hidden" aria-label="内嵌字幕"><select id="playerEmbeddedSubtitle" disabled><option value="-1">内嵌字幕关</option></select></label>
-            <label class="player-select-wrap" aria-label="播放速度"><select id="playerSpeed"><option value="0.5">0.5×</option><option value="0.75">0.75×</option><option value="1" selected>1×</option><option value="1.25">1.25×</option><option value="1.5">1.5×</option><option value="2">2×</option></select></label>
+            <label class="player-select-wrap player-quality-wrap hidden" aria-label="清晰度"><select id="playerQuality" disabled><option value="-1">自动</option></select></label>
+            <label class="player-select-wrap player-audio-wrap hidden" aria-label="音轨"><select id="playerAudioTrack" disabled><option value="-1">默认音轨</option></select></label>
+            <label class="player-select-wrap player-embedded-subtitle-wrap hidden" aria-label="内嵌字幕"><select id="playerEmbeddedSubtitle" disabled><option value="-1">内嵌字幕关</option></select></label>
+            <label class="player-select-wrap player-speed-wrap" aria-label="播放速度"><select id="playerSpeed"><option value="0.5">0.5×</option><option value="0.75">0.75×</option><option value="1" selected>1×</option><option value="1.25">1.25×</option><option value="1.5">1.5×</option><option value="2">2×</option></select></label>
             <button id="playerDiagnostics" class="player-control-button" type="button" aria-label="播放诊断" title="播放诊断"></button>
-            <button id="playerToolsToggle" class="player-control-button player-tools-toggle" type="button" aria-label="字幕与线路" title="字幕与线路"></button>
             <button id="playerPip" class="player-control-button player-text-button" type="button" aria-label="画中画">画中画</button>
-            <button id="playerFullscreen" class="player-control-button" type="button" aria-label="全屏"></button>
+            <button id="playerToolsToggle" class="player-control-button player-tools-toggle" type="button" aria-label="字幕与线路" title="字幕与线路" aria-expanded="false"></button>
+            <button id="playerFullscreen" class="player-control-button" type="button" aria-label="全屏" title="全屏"></button>
           </div>
         </div>
       </div>
     </div>
     <div id="playerTools" class="player-tools">
+      <div class="player-tools-head"><strong>字幕与线路</strong><button id="playerToolsClose" type="button" aria-label="关闭字幕与线路">×</button></div>
       <label>字幕<select id="subtitleSelect"><option value="">关闭</option></select></label>
       <label class="file-button">加载本地字幕<input id="subtitleFile" type="file" accept=".vtt,.srt,text/vtt,application/x-subrip" /></label>
       <button id="playerSwitchSource" class="file-button player-source-switch" type="button">切换备用线路</button>
@@ -174,7 +176,7 @@
   <div id="toast" class="toast hidden" role="status"></div>
 
   <footer><span id="footerName">Cactus TV</span><span id="metadataCredit"></span></footer>
-  <script type="module" src="/js/app.js?v=0.6.0"></script>
-  <script nomodule src="/js/app-legacy.js?v=0.6.0"></script>
+  <script type="module" src="/js/app.js?v=0.6.1"></script>
+  <script nomodule src="/js/app-legacy.js?v=0.6.1"></script>
 </body>
 </html>

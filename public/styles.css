@@ -1357,3 +1357,222 @@ footer { display: flex; justify-content: space-between; gap: 30px; width: calc(1
   .player-dialog .video-shell { height: 100vh; height: 100dvh; }
   .player-tools-toggle { display: grid; }
 }
+
+/* v0.6.1 mobile/fullscreen player controls */
+.player-tools-head {
+  display: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(255,255,255,.12);
+}
+.player-tools-head strong { font-size: 14px; }
+.player-tools-head button {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(255,255,255,.1);
+  color: #fff;
+  font-size: 25px;
+  line-height: 1;
+  cursor: pointer;
+}
+.player-lock-button {
+  position: absolute;
+  z-index: 15;
+  top: 50%;
+  left: max(12px,env(safe-area-inset-left));
+  width: 42px;
+  height: 42px;
+  display: none;
+  place-items: center;
+  padding: 0;
+  border: 1px solid rgba(255,255,255,.24);
+  border-radius: 50%;
+  background: rgba(0,0,0,.58);
+  color: #fff;
+  opacity: 0;
+  transform: translateY(-50%);
+  pointer-events: none;
+  transition: opacity .18s ease,background .18s ease;
+  backdrop-filter: blur(8px);
+}
+.player-lock-button svg { width: 22px; height: 22px; }
+.player-lock-button:active { background: rgba(255,255,255,.22); }
+.player-dialog.player-locked .player-head { opacity: 0 !important; pointer-events: none !important; }
+.player-dialog.player-locked .player-tools { display: none !important; }
+.video-shell.controls-locked .player-controls,
+.video-shell.controls-locked .center-play,
+.video-shell.controls-locked .player-gesture,
+.video-shell.controls-locked .player-diagnostics-panel {
+  opacity: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+.video-shell.controls-locked .player-lock-button {
+  display: grid !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+  pointer-events: auto !important;
+}
+
+.player-dialog:fullscreen,
+.player-dialog.is-fullscreen {
+  inset: 0;
+  width: 100vw;
+  max-width: none;
+  height: 100vh;
+  height: 100dvh;
+  max-height: none;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 0;
+  border-radius: 0;
+  background: #000;
+}
+.player-dialog:fullscreen .video-shell,
+.player-dialog.is-fullscreen .video-shell {
+  flex: 1 1 auto;
+  width: 100%;
+  height: 100vh;
+  height: 100dvh;
+  aspect-ratio: auto;
+}
+.player-dialog:fullscreen .player-head,
+.player-dialog.is-fullscreen .player-head {
+  position: absolute;
+  z-index: 14;
+  top: 0;
+  right: 0;
+  left: 0;
+  min-height: 52px;
+  padding: max(7px,env(safe-area-inset-top)) max(9px,env(safe-area-inset-right)) 7px max(12px,env(safe-area-inset-left));
+  border: 0;
+  background: linear-gradient(180deg,rgba(0,0,0,.78),transparent);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .18s ease;
+}
+.player-dialog:fullscreen.controls-visible .player-head,
+.player-dialog.is-fullscreen.controls-visible .player-head {
+  opacity: 1;
+}
+.player-dialog:fullscreen .player-head .sheet-close,
+.player-dialog.is-fullscreen .player-head .sheet-close {
+  pointer-events: auto;
+  background: rgba(0,0,0,.58);
+}
+.player-dialog:fullscreen .player-title-wrap,
+.player-dialog.is-fullscreen .player-title-wrap { opacity: 0; }
+.player-dialog:fullscreen .player-lock-button,
+.player-dialog.is-fullscreen .player-lock-button { display: grid; }
+.player-dialog:fullscreen.controls-visible .player-lock-button,
+.player-dialog.is-fullscreen.controls-visible .player-lock-button {
+  opacity: 1;
+  pointer-events: auto;
+}
+.player-dialog:fullscreen .player-tools,
+.player-dialog.is-fullscreen .player-tools {
+  position: absolute;
+  z-index: 16;
+  top: max(58px,calc(env(safe-area-inset-top) + 50px));
+  right: max(10px,env(safe-area-inset-right));
+  bottom: auto;
+  left: auto;
+  width: min(340px,calc(100% - 20px));
+  max-height: calc(100vh - 126px);
+  max-height: calc(100dvh - 126px);
+  display: none;
+  align-items: stretch;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  padding: 13px;
+  overflow-y: auto;
+  border: 1px solid rgba(255,255,255,.18);
+  border-radius: 9px;
+  background: rgba(13,13,13,.96);
+  box-shadow: 0 18px 48px rgba(0,0,0,.55);
+}
+.player-dialog:fullscreen.tools-open .player-tools,
+.player-dialog.is-fullscreen.tools-open .player-tools { display: flex; }
+.player-dialog:fullscreen .player-tools-head,
+.player-dialog.is-fullscreen .player-tools-head { display: flex; }
+.player-dialog:fullscreen .player-tools label,
+.player-dialog:fullscreen .player-tools select,
+.player-dialog:fullscreen .player-source-switch,
+.player-dialog.is-fullscreen .player-tools label,
+.player-dialog.is-fullscreen .player-tools select,
+.player-dialog.is-fullscreen .player-source-switch { width: 100%; }
+
+@media (max-width: 700px) {
+  .player-dialog { position: fixed; }
+  .player-control-row { width: 100%; gap: 2px; }
+  .player-control-left { flex: 1 1 auto; min-width: 0; gap: 0; }
+  .player-control-right { flex: 0 0 auto; min-width: 0; gap: 0; }
+  .player-control-button { flex: 0 0 34px; }
+  #playerDiagnostics,
+  #playerPip { display: none !important; }
+  #playerToolsToggle,
+  #playerFullscreen { display: grid !important; flex: 0 0 34px; }
+  .player-control-right .player-select-wrap { flex: 0 1 66px; min-width: 0; }
+  .player-control-right .player-select-wrap select { width: 100%; max-width: 66px; }
+  .player-audio-wrap,
+  .player-embedded-subtitle-wrap { display: none !important; }
+  .player-time { max-width: 42px; overflow: hidden; text-overflow: clip; }
+
+  .player-dialog .player-tools {
+    position: absolute;
+    z-index: 16;
+    right: 10px;
+    bottom: max(12px,env(safe-area-inset-bottom));
+    left: 10px;
+    width: auto;
+    max-height: min(58vh,460px);
+    display: none;
+    align-items: stretch;
+    flex: 0 0 auto;
+    flex-direction: column;
+    gap: 10px;
+    min-height: 0;
+    padding: 13px;
+    overflow-y: auto;
+    border: 1px solid rgba(255,255,255,.18);
+    border-radius: 10px;
+    background: rgba(13,13,13,.97);
+    box-shadow: 0 18px 48px rgba(0,0,0,.58);
+  }
+  .player-dialog.tools-open .player-tools { display: flex; }
+  .player-dialog .player-tools-head { display: flex; }
+  .player-dialog .player-tools label,
+  .player-dialog .player-tools select,
+  .player-dialog .player-source-switch { width: 100%; }
+}
+
+@media (max-width: 380px) {
+  .player-quality-wrap,
+  .player-time { display: none !important; }
+}
+
+@media (max-width: 900px) and (orientation: landscape) {
+  .player-dialog .player-head {
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .18s ease;
+  }
+  .player-dialog.controls-visible .player-head { opacity: 1; }
+  .player-dialog .player-lock-button { display: grid; }
+  .player-dialog.controls-visible .player-lock-button {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .player-dialog .player-tools-head { display: flex; }
+}
