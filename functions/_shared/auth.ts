@@ -23,5 +23,5 @@ export function requireAdmin(request: Request, env: Env): void {
 }
 
 export function adminConfigured(env: Env): boolean {
-  return Boolean((env.ADMIN_TOKEN || '').trim().length >= 16);
+  return Boolean((env.ADMIN_TOKEN || '').trim().length >= 8);
 }
