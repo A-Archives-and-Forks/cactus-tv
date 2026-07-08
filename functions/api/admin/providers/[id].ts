@@ -1,6 +1,6 @@
 import { requireAdmin } from '../../../_shared/auth';
 import { HttpError, ok, readJson } from '../../../_shared/http';
-import { findProvider, normalizeProvider, saveProvider } from '../../../_shared/providers';
+import { findProvider, invalidateProviderCache, normalizeProvider, saveProvider } from '../../../_shared/providers';
 import { requireDb } from '../../../_shared/db';
 import type { AppData, Env } from '../../../_shared/types';
 
@@ -22,5 +22,6 @@ export const onRequestDelete: PagesFunction<Env, 'id', AppData> = async ({ reque
     db.prepare('DELETE FROM provider_health WHERE provider_id = ?').bind(id),
     db.prepare('DELETE FROM providers WHERE id = ?').bind(id),
   ]);
+  invalidateProviderCache();
   return ok({ deleted: true });
 };
