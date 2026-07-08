@@ -1,4 +1,4 @@
-import { setPlaybackQuality } from './player.js?v=0.3.0';
+import { setPlaybackQuality } from './player.js?v=0.4.0';
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 

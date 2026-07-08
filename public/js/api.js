@@ -1,1 +1,120 @@
-const d=new Map,f=new Map,m="cactus:api:v3:";function b(){return Date.now()}function _(e){const t=d.get(e);if(t&&t.expires>b())return t.value;t&&d.delete(e);try{const o=JSON.parse(sessionStorage.getItem(m+e));if(o?.expires>b())return d.set(e,o),o.value;sessionStorage.removeItem(m+e)}catch{}return null}function I(e,t,o){if(!o)return;const a={value:t,expires:b()+o};if(d.set(e,a),!(o<6e4))try{const h=JSON.stringify(a);h.length<22e4&&sessionStorage.setItem(m+e,h)}catch{}}async function g(e,t={}){const{cacheTtl:o=0,dedupe:a=!0,timeout:h=12e3,signal:c,...u}=t,i=String(u.method||"GET").toUpperCase(),n=`${i}:${e}`;if(i==="GET"&&o){const r=_(n);if(r)return r}if(i==="GET"&&a&&f.has(n))return f.get(n);const l=new AbortController,E=()=>l.abort(c?.reason);c&&(c.aborted?E():c.addEventListener("abort",E,{once:!0}));const w=setTimeout(()=>l.abort(new DOMException("\u8BF7\u6C42\u8D85\u65F6","TimeoutError")),h),T=(async()=>{try{const r=await fetch(e,{credentials:"same-origin",headers:{Accept:"application/json",...u.body?{"Content-Type":"application/json"}:{},...u.headers||{}},...u,signal:l.signal}),s=await r.json().catch(()=>({}));if(!r.ok){const p=new Error(s.error||`\u8BF7\u6C42\u5931\u8D25\uFF08${r.status}\uFF09`);throw p.code=s.code,p.status=r.status,p.requestId=s.requestId,p}return i==="GET"&&I(n,s,o),s}catch(r){throw l.signal.aborted&&r?.name==="AbortError"?new DOMException("\u8BF7\u6C42\u5DF2\u53D6\u6D88","AbortError"):r}finally{clearTimeout(w),c?.removeEventListener?.("abort",E),f.delete(n)}})();return i==="GET"&&a&&f.set(n,T),T}const S={health:()=>g("/api/health",{cacheTtl:6e4,timeout:8e3}),home:()=>g("/api/home",{cacheTtl:5*6e4,timeout:12e3}),search:(e,t)=>g(`/api/search?q=${encodeURIComponent(e)}`,{cacheTtl:3e4,dedupe:!1,signal:t,timeout:12e3}),detail:(e,t,o)=>g(`/api/detail?provider=${encodeURIComponent(e)}&id=${encodeURIComponent(t)}`,{cacheTtl:2*6e4,dedupe:!1,signal:o,timeout:12e3}),clear(){d.clear();try{Object.keys(sessionStorage).filter(e=>e.startsWith(m)).forEach(e=>sessionStorage.removeItem(e))}catch{}}};export{S as api};
+const memoryCache = new Map();
+const inflight = new Map();
+const CACHE_PREFIX = 'cactus:api:v4:';
+
+function now() { return Date.now(); }
+
+function readCache(key) {
+  const memory = memoryCache.get(key);
+  if (memory && memory.expires > now()) return memory.value;
+  if (memory) memoryCache.delete(key);
+
+  try {
+    const stored = JSON.parse(sessionStorage.getItem(CACHE_PREFIX + key));
+    if (stored?.expires > now()) {
+      memoryCache.set(key, stored);
+      return stored.value;
+    }
+    sessionStorage.removeItem(CACHE_PREFIX + key);
+  } catch {}
+  return null;
+}
+
+function writeCache(key, value, ttl) {
+  if (!ttl) return;
+  const entry = { value, expires: now() + ttl };
+  memoryCache.set(key, entry);
+  if (ttl < 60_000) return;
+  try {
+    const serialized = JSON.stringify(entry);
+    if (serialized.length < 320_000) sessionStorage.setItem(CACHE_PREFIX + key, serialized);
+  } catch {}
+}
+
+async function requestJson(path, options = {}) {
+  const {
+    cacheTtl = 0,
+    dedupe = true,
+    timeout = 12_000,
+    signal,
+    ...fetchOptions
+  } = options;
+  const method = String(fetchOptions.method || 'GET').toUpperCase();
+  const cacheKey = `${method}:${path}`;
+
+  if (method === 'GET' && cacheTtl) {
+    const cached = readCache(cacheKey);
+    if (cached) return cached;
+  }
+  if (method === 'GET' && dedupe && inflight.has(cacheKey)) return inflight.get(cacheKey);
+
+  const controller = new AbortController();
+  const abortFromCaller = () => controller.abort(signal?.reason);
+  if (signal) {
+    if (signal.aborted) abortFromCaller();
+    else signal.addEventListener('abort', abortFromCaller, { once: true });
+  }
+  const timer = setTimeout(() => controller.abort(new DOMException('请求超时', 'TimeoutError')), timeout);
+
+  const promise = (async () => {
+    try {
+      const response = await fetch(path, {
+        credentials: 'same-origin',
+        headers: {
+          Accept: 'application/json',
+          ...(fetchOptions.body ? { 'Content-Type': 'application/json' } : {}),
+          ...(fetchOptions.headers || {}),
+        },
+        ...fetchOptions,
+        signal: controller.signal,
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        const error = new Error(payload.error || `请求失败（${response.status}）`);
+        error.code = payload.code;
+        error.status = response.status;
+        error.requestId = payload.requestId;
+        throw error;
+      }
+      if (method === 'GET') writeCache(cacheKey, payload, cacheTtl);
+      return payload;
+    } catch (error) {
+      if (controller.signal.aborted && error?.name === 'AbortError') {
+        throw new DOMException('请求已取消', 'AbortError');
+      }
+      throw error;
+    } finally {
+      clearTimeout(timer);
+      signal?.removeEventListener?.('abort', abortFromCaller);
+      inflight.delete(cacheKey);
+    }
+  })();
+
+  if (method === 'GET' && dedupe) inflight.set(cacheKey, promise);
+  return promise;
+}
+
+export const api = {
+  health: () => requestJson('/api/health', { cacheTtl: 60_000, timeout: 8_000 }),
+  home: () => requestJson('/api/home', { cacheTtl: 5 * 60_000, timeout: 12_000 }),
+  search: (query, signal) => requestJson(`/api/search?q=${encodeURIComponent(query)}`, {
+    cacheTtl: 2 * 60_000,
+    dedupe: false,
+    signal,
+    timeout: 20_000,
+  }),
+  detail: (provider, id, signal) => requestJson(`/api/detail?provider=${encodeURIComponent(provider)}&id=${encodeURIComponent(id)}`, {
+    cacheTtl: 2 * 60_000,
+    dedupe: false,
+    signal,
+    timeout: 14_000,
+  }),
+  clear() {
+    memoryCache.clear();
+    try {
+      Object.keys(sessionStorage)
+        .filter(key => key.startsWith(CACHE_PREFIX))
+        .forEach(key => sessionStorage.removeItem(key));
+    } catch {}
+  },
+};
