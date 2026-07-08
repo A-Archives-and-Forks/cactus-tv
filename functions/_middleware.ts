@@ -262,7 +262,7 @@ function loginPage(returnPath: string, message = ''): Response {
         id="password"
         name="password"
         type="password"
-        minlength="16"
+        minlength="8"
         autocomplete="current-password"
         autofocus
         required
@@ -342,7 +342,7 @@ export const onRequest: PagesFunction<Env, any, AppData> = async context => {
   context.data.requestId = requestId;
 
   try {
-    if (!adminToken || adminToken.length < 16) {
+    if (!adminToken || adminToken.length < 8) {
       return new Response('尚未正确配置 ADMIN_TOKEN，站点已锁定。', {
         status: 503,
         headers: {
@@ -412,7 +412,9 @@ export const onRequest: PagesFunction<Env, any, AppData> = async context => {
     if (
       url.pathname === '/' ||
       url.pathname.endsWith('.html') ||
-      url.pathname.startsWith('/api/')
+      (url.pathname.startsWith('/api/')
+        && url.pathname !== '/api/stream'
+        && url.pathname !== '/api/subtitle')
     ) {
       headers.set('cache-control', 'no-store, private');
     }
