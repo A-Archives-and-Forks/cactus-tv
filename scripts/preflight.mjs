@@ -3,10 +3,12 @@ import { constants } from 'node:fs';
 
 const required = [
   'public/index.html', 'public/admin.html', 'public/styles.css', 'public/_headers', 'public/_redirects',
-  'public/js/app.js', 'public/js/admin.js', 'public/js/api.js', 'public/js/player.js', 'public/js/player-ui.js',
+  'public/js/app.js', 'public/js/admin.js', 'public/js/api.js', 'public/js/media.js', 'public/js/player.js', 'public/js/player-ui.js',
   'public/vendor/hls.min.js', 'functions/_middleware.ts', 'functions/_shared/auth.ts',
-  'functions/api/health.ts', 'functions/api/admin/providers.ts',
-  'migrations/0001_init.sql', 'DEPLOY.md', 'LICENSE', 'THIRD_PARTY_NOTICES.md',
+  'functions/api/health.ts', 'functions/api/admin/providers.ts', 'functions/_shared/media.ts', 'functions/_shared/media-response.ts',
+  'functions/api/media/session.ts', 'functions/api/media/library.ts', 'functions/api/media/detail.ts', 'functions/api/media/playback.ts',
+  'functions/api/media/stream.ts', 'functions/api/media/proxy.ts', 'functions/api/media/image.ts', 'functions/api/media/progress.ts',
+  'migrations/0001_init.sql', 'README.md', 'DEPLOY.md', 'LICENSE', 'THIRD_PARTY_NOTICES.md',
 ];
 
 const failures = [];
@@ -42,6 +44,15 @@ try {
   for (const table of ['users', 'sessions', 'login_attempts', 'favorites', 'history']) {
     if (new RegExp(`CREATE TABLE IF NOT EXISTS ${table}\\b`, 'i').test(sql)) failures.push(`数据库不应创建账户表：${table}`);
   }
+} catch {}
+
+
+try {
+  const readme = await readFile('README.md', 'utf8');
+  for (const text of ['连接 Jellyfin', '连接 Emby', '公网可访问的 HTTPS', 'v0.5.0']) {
+    if (!readme.includes(text)) failures.push(`README 缺少说明：${text}`);
+  }
+  if (/从 v0\.3|Cloudflare 会按现有设置自动重新部署/.test(readme)) failures.push('README 仍包含维护者升级说明');
 } catch {}
 
 try {
