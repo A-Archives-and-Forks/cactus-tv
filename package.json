@@ -1,0 +1,28 @@
+{
+  "name": "cactus-tv",
+  "version": "0.2.3",
+  "private": true,
+  "description": "Cactus TV for Cloudflare Pages, Pages Functions and D1.",
+  "scripts": {
+    "dev": "wrangler pages dev public",
+    "vendor": "node -e \"require('node:fs').copyFileSync('node_modules/hls.js/dist/hls.min.js', 'public/vendor/hls.min.js')\"",
+    "build:functions": "wrangler pages functions build functions --outdir .functions-build",
+    "check:js": "node --check public/js/api.js && node --check public/js/storage.js && node --check public/js/player.js && node --check public/js/app.js && node --check public/js/admin.js",
+    "preflight": "node scripts/preflight.mjs",
+    "check": "npm run build:functions && npm run check:js && npm run preflight",
+    "smoke": "node scripts/smoke.mjs",
+    "db:local": "wrangler d1 execute cactus-tv-db --local --file=migrations/0001_init.sql",
+    "db:remote": "wrangler d1 execute cactus-tv-db --remote --file=migrations/0001_init.sql",
+    "deploy": "wrangler pages deploy public --project-name cactus-tv"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260701.0",
+    "wrangler": "^4.0.0"
+  },
+  "dependencies": {
+    "hls.js": "1.6.13"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

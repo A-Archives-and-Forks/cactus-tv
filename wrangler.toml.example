@@ -1,0 +1,10 @@
+name = "cactus-tv"
+compatibility_date = "2026-07-01"
+pages_build_output_dir = "./public"
+
+# 本地开发可以保留下面的 ID。
+# 线上部署按 DEPLOY.md 在 Cloudflare Pages 中绑定 D1。
+[[d1_databases]]
+binding = "DB"
+database_name = "cactus-tv-db"
+database_id = "local-cactus-tv-db"
