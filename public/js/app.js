@@ -111,7 +111,7 @@ async function ensurePlayerModules() {
   if (!playerModulesPromise) {
     playerModulesPromise = Promise.all([
       import('./player.js?v=0.6.0'),
-      import('./player-ui.js?v=0.6.0'),
+      import('./player-ui.js?v=0.6.1'),
     ]).then(([apiModule, uiModule]) => {
       playerApi = apiModule;
       playerUI = uiModule.createPlayerUI({

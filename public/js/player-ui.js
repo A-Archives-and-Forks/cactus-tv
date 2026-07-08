@@ -19,6 +19,8 @@ function svgIcon(name) {
     exitFullscreen: '<path d="M4 8h4V4m12 4h-4V4M4 16h4v4m12-4h-4v4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>',
     sliders: '<path d="M4 7h10m4 0h2M4 17h2m4 0h10M14 4v6M6 14v6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
     info: '<circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 10v6m0-9h.01" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
+    lock: '<rect x="6" y="10" width="12" height="10" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M8.5 10V7.5a3.5 3.5 0 0 1 7 0V10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
+    unlock: '<rect x="6" y="10" width="12" height="10" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M15.5 10V7.5a3.5 3.5 0 0 0-6.55-1.72" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
   };
   return `<svg viewBox="0 0 24 24" aria-hidden="true">${icons[name] || ''}</svg>`;
 }
@@ -50,7 +52,10 @@ export function createPlayerUI({
     embeddedSubtitle: shell.querySelector('#playerEmbeddedSubtitle'),
     pip: shell.querySelector('#playerPip'),
     fullscreen: shell.querySelector('#playerFullscreen'),
+    lock: shell.querySelector('#playerLock'),
     tools: shell.querySelector('#playerToolsToggle'),
+    toolsPanel: dialog.querySelector('#playerTools'),
+    toolsClose: dialog.querySelector('#playerToolsClose'),
     diagnostics: shell.querySelector('#playerDiagnostics'),
     diagnosticsPanel: shell.querySelector('#playerDiagnosticsPanel'),
     gesture: shell.querySelector('#playerGesture'),
@@ -65,15 +70,44 @@ export function createPlayerUI({
   let timeFrame = 0;
   let diagnosticsVisible = false;
   let diagnosticsData = null;
+  let locked = false;
+  const coarsePointer = matchMedia('(pointer: coarse)');
 
   const setIcon = (button, icon) => { if (button) button.innerHTML = svgIcon(icon); };
 
-  function showControls(persist = false) {
-    shell.classList.add('controls-visible');
+  function setControlsVisible(visible) {
+    shell.classList.toggle('controls-visible', visible);
+    dialog.classList.toggle('controls-visible', visible);
+  }
+
+  function closeTools({ restoreFocus = false } = {}) {
+    const wasOpen = dialog.classList.contains('tools-open');
+    dialog.classList.remove('tools-open');
+    ui.tools?.setAttribute('aria-expanded', 'false');
+    if (restoreFocus && wasOpen) ui.tools?.focus({ preventScroll: true });
+  }
+
+  function scheduleHide(delay = 2800) {
     clearTimeout(hideTimer);
-    if (!persist && !video.paused && state === 'playing') {
-      hideTimer = window.setTimeout(() => shell.classList.remove('controls-visible'), 2800);
-    }
+    if (locked || video.paused || state !== 'playing') return;
+    hideTimer = window.setTimeout(() => {
+      closeTools();
+      setControlsVisible(false);
+    }, delay);
+  }
+
+  function showControls(persist = false) {
+    if (locked) return;
+    setControlsVisible(true);
+    clearTimeout(hideTimer);
+    if (!persist) scheduleHide();
+  }
+
+  function hideControls() {
+    if (locked) return;
+    clearTimeout(hideTimer);
+    closeTools();
+    setControlsVisible(false);
   }
 
   function setState(nextState) {
@@ -148,18 +182,73 @@ export function createPlayerUI({
     ui.volume.value = String(muted ? 0 : video.volume);
   }
 
+  function isFullscreen() {
+    return Boolean(document.fullscreenElement || document.webkitFullscreenElement || video.webkitDisplayingFullscreen);
+  }
+
   async function toggleFullscreen() {
-    try {
-      if (document.fullscreenElement) await document.exitFullscreen();
-      else if (shell.requestFullscreen) await shell.requestFullscreen();
-      else if (video.webkitEnterFullscreen) video.webkitEnterFullscreen();
-    } catch {}
+    closeTools();
+    if (document.fullscreenElement || document.webkitFullscreenElement) {
+      try {
+        const exit = document.exitFullscreen || document.webkitExitFullscreen;
+        if (exit) await exit.call(document);
+      } catch {}
+      showControls();
+      return;
+    }
+
+    let entered = false;
+    for (const target of [dialog, shell]) {
+      const request = target.requestFullscreen || target.webkitRequestFullscreen;
+      if (!request) continue;
+      try {
+        await request.call(target);
+        entered = true;
+        break;
+      } catch {}
+    }
+    if (!entered && video.webkitEnterFullscreen) {
+      try { video.webkitEnterFullscreen(); entered = true; } catch {}
+    }
+    if (entered) {
+      try { await screen.orientation?.lock?.('landscape'); } catch {}
+    }
     showControls();
   }
 
   function updateFullscreen() {
-    setIcon(ui.fullscreen, document.fullscreenElement ? 'exitFullscreen' : 'fullscreen');
-    ui.fullscreen.setAttribute('aria-label', document.fullscreenElement ? '退出全屏' : '全屏');
+    const active = isFullscreen();
+    dialog.classList.toggle('is-fullscreen', active);
+    setIcon(ui.fullscreen, active ? 'exitFullscreen' : 'fullscreen');
+    ui.fullscreen?.setAttribute('aria-label', active ? '退出全屏' : '全屏');
+    ui.fullscreen?.setAttribute('title', active ? '退出全屏' : '全屏');
+    closeTools();
+    if (!active) {
+      try { screen.orientation?.unlock?.(); } catch {}
+      if (locked) setLocked(false);
+    }
+    showControls();
+  }
+
+  function setLocked(nextLocked) {
+    locked = Boolean(nextLocked);
+    dialog.classList.toggle('player-locked', locked);
+    shell.classList.toggle('controls-locked', locked);
+    closeTools();
+    setIcon(ui.lock, locked ? 'lock' : 'unlock');
+    ui.lock?.setAttribute('aria-label', locked ? '解锁播放器' : '锁定播放器');
+    ui.lock?.setAttribute('title', locked ? '解锁播放器' : '锁定播放器');
+    if (locked) {
+      clearTimeout(hideTimer);
+      setControlsVisible(false);
+      diagnosticsVisible = false;
+      ui.diagnosticsPanel?.classList.add('hidden');
+      ui.diagnostics?.classList.remove('active');
+    } else showControls();
+  }
+
+  function toggleLock() {
+    setLocked(!locked);
   }
 
   function renderDiagnostics() {
@@ -189,8 +278,15 @@ export function createPlayerUI({
   }
 
   function toggleTools() {
-    dialog.classList.toggle('tools-open');
-    showControls(true);
+    if (locked) return;
+    const opening = !dialog.classList.contains('tools-open');
+    dialog.classList.toggle('tools-open', opening);
+    ui.tools?.setAttribute('aria-expanded', String(opening));
+    if (opening) {
+      showControls(true);
+      scheduleHide(5500);
+      if (!coarsePointer.matches) requestAnimationFrame(() => ui.toolsPanel?.querySelector('select,button,input')?.focus({ preventScroll: true }));
+    } else showControls();
   }
 
   function visibleFocusables() {
@@ -215,11 +311,13 @@ export function createPlayerUI({
   ui.play.addEventListener('click', togglePlay);
   ui.centerPlay.addEventListener('click', togglePlay);
   video.addEventListener('click', () => {
-    if (matchMedia('(pointer: coarse)').matches) {
-      shell.classList.contains('controls-visible') ? shell.classList.remove('controls-visible') : showControls();
+    if (locked) return;
+    if (coarsePointer.matches) {
+      shell.classList.contains('controls-visible') ? hideControls() : showControls();
     } else togglePlay();
   });
   video.addEventListener('dblclick', event => {
+    if (locked) return;
     const bounds = video.getBoundingClientRect();
     seekBy(event.clientX < bounds.left + bounds.width / 2 ? -10 : 10);
   });
@@ -253,9 +351,34 @@ export function createPlayerUI({
   ui.audio.addEventListener('change', () => { setAudioTrack(Number(ui.audio.value)); showControls(); });
   ui.embeddedSubtitle.addEventListener('change', () => { setSubtitleTrack(Number(ui.embeddedSubtitle.value)); showControls(); });
   ui.fullscreen.addEventListener('click', toggleFullscreen);
-  ui.tools?.addEventListener('click', toggleTools);
+  ui.lock?.addEventListener('click', event => { event.stopPropagation(); toggleLock(); });
+  ui.tools?.addEventListener('click', event => { event.stopPropagation(); toggleTools(); });
+  ui.toolsClose?.addEventListener('click', () => { closeTools({ restoreFocus: true }); showControls(); });
+  ui.toolsPanel?.addEventListener('pointerdown', event => event.stopPropagation());
+  ui.toolsPanel?.addEventListener('change', () => {
+    if (coarsePointer.matches || isFullscreen()) closeTools();
+    showControls();
+  });
+  ui.toolsPanel?.addEventListener('click', event => {
+    if (event.target.closest('#playerToolsClose')) return;
+    if (event.target.closest('button')) queueMicrotask(() => { closeTools(); showControls(); });
+    else scheduleHide(5500);
+  });
   ui.diagnostics?.addEventListener('click', toggleDiagnostics);
   document.addEventListener('fullscreenchange', updateFullscreen);
+  document.addEventListener('webkitfullscreenchange', updateFullscreen);
+  video.addEventListener('webkitbeginfullscreen', updateFullscreen);
+  video.addEventListener('webkitendfullscreen', updateFullscreen);
+  dialog.addEventListener('close', async () => {
+    closeTools();
+    setLocked(false);
+    if (document.fullscreenElement === dialog || document.webkitFullscreenElement === dialog) {
+      try {
+        const exit = document.exitFullscreen || document.webkitExitFullscreen;
+        if (exit) await exit.call(document);
+      } catch {}
+    }
+  });
 
   if (!document.pictureInPictureEnabled || !video.requestPictureInPicture) ui.pip.classList.add('hidden');
   else ui.pip.addEventListener('click', async () => {
@@ -267,26 +390,45 @@ export function createPlayerUI({
   });
 
   shell.addEventListener('pointermove', () => {
+    if (locked) return;
     const now = performance.now();
     if (now - lastPointerActivity < 120) return;
     lastPointerActivity = now;
     showControls();
   });
-  shell.addEventListener('pointerdown', () => showControls());
-  shell.addEventListener('mouseleave', () => { if (!video.paused && state === 'playing') shell.classList.remove('controls-visible'); });
-  dialog.addEventListener('focusin', () => showControls(true));
+  shell.addEventListener('pointerdown', event => {
+    if (locked || event.target.closest('#playerToolsToggle,#playerLock')) return;
+    showControls();
+  });
+  dialog.addEventListener('pointerdown', event => {
+    if (!dialog.classList.contains('tools-open')) return;
+    if (event.target.closest('#playerTools,#playerToolsToggle')) return;
+    closeTools();
+    showControls();
+  });
+  shell.addEventListener('mouseleave', () => { if (!video.paused && state === 'playing') hideControls(); });
+  dialog.addEventListener('focusin', event => {
+    if (locked) return;
+    showControls(!coarsePointer.matches);
+  });
 
   dialog.addEventListener('keydown', event => {
     if (!dialog.open && !dialog.hasAttribute('open')) return;
     const key = event.key;
     if (['Escape', 'GoBack', 'BrowserBack'].includes(key) || event.keyCode === 461) {
-      event.preventDefault(); requestClose(); return;
+      event.preventDefault();
+      if (locked) setLocked(false);
+      else if (dialog.classList.contains('tools-open')) { closeTools({ restoreFocus: true }); showControls(); }
+      else requestClose();
+      return;
     }
+    if (key === 'q' || key === 'Q') { event.preventDefault(); toggleLock(); return; }
+    if (key === 'f' || key === 'F') { event.preventDefault(); toggleFullscreen(); return; }
+    if (locked) return;
     if (key === 'MediaPlayPause' || key === 'Play' || key === 'Pause') { event.preventDefault(); togglePlay(); return; }
     if (key === 'MediaTrackNext') { event.preventDefault(); ui.next?.click(); return; }
     if (key === 'MediaTrackPrevious') { event.preventDefault(); ui.prev?.click(); return; }
     if (key === 'd' || key === 'D') { event.preventDefault(); toggleDiagnostics(); return; }
-    if (key === 'f' || key === 'F') { event.preventDefault(); toggleFullscreen(); return; }
     if (key === 'm' || key === 'M') { event.preventDefault(); ui.mute.click(); return; }
     if (key === 'k' || key === 'K') { event.preventDefault(); togglePlay(); return; }
 
@@ -299,7 +441,7 @@ export function createPlayerUI({
     }
     if (target === shell && key === 'ArrowUp') {
       event.preventDefault();
-      const preferred = [ui.tools, dialog.querySelector('.player-close'), ui.diagnostics].find(element => element && !element.disabled && element.offsetParent !== null);
+      const preferred = [ui.lock, ui.tools, dialog.querySelector('.sheet-close'), ui.diagnostics].find(element => element && !element.disabled && element.offsetParent !== null);
       preferred?.focus({ preventScroll: true });
       return;
     }
@@ -368,6 +510,7 @@ export function createPlayerUI({
   setIcon(ui.play, 'play');
   setIcon(ui.mute, 'volume');
   setIcon(ui.fullscreen, 'fullscreen');
+  setIcon(ui.lock, 'unlock');
   setIcon(ui.tools, 'sliders');
   setIcon(ui.diagnostics, 'info');
   updateVolume();
@@ -379,7 +522,8 @@ export function createPlayerUI({
       clearTimeout(hideTimer); clearTimeout(gestureTimer);
       if (timeFrame) cancelAnimationFrame(timeFrame);
       timeFrame = 0; diagnosticsData = null; diagnosticsVisible = false;
-      dialog.classList.remove('tools-open');
+      setLocked(false);
+      closeTools();
       message.classList.add('hidden');
       ui.gesture.classList.add('hidden');
       ui.diagnosticsPanel?.classList.add('hidden');
@@ -394,7 +538,7 @@ export function createPlayerUI({
       ui.embeddedSubtitle.disabled = true;
       ui.embeddedSubtitle.closest('.player-select-wrap')?.classList.add('hidden');
       ui.speed.value = '1'; video.playbackRate = 1;
-      setState('loading'); updatePlayButton(); updateTime(); shell.classList.add('controls-visible');
+      setState('loading'); updatePlayButton(); updateTime(); setControlsVisible(true);
     },
     focus() { shell.focus({ preventScroll: true }); },
     setRetry(handler) { retryHandler = handler; },
