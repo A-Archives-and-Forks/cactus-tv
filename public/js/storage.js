@@ -1,17 +1,1 @@
-const KEYS = { favorites: 'cactus:favorites:v2', history: 'cactus:history:v2', settings: 'cactus:settings:v2' };
-function read(key, fallback) { try { return JSON.parse(localStorage.getItem(key)) ?? fallback; } catch { return fallback; } }
-function write(key, value) { try { localStorage.setItem(key, JSON.stringify(value)); } catch {} }
-export const store = {
-  favorites() { return read(KEYS.favorites, []); },
-  replaceFavorites(list) { write(KEYS.favorites, list || []); },
-  isFavorite(key) { return this.favorites().some(item => item.key === key); },
-  setFavorite(item, active) { const list = this.favorites().filter(x => x.key !== item.key); if (active) list.unshift(item); write(KEYS.favorites, list.slice(0, 300)); return active; },
-  toggleFavorite(item) { return this.setFavorite(item, !this.isFavorite(item.key)); },
-  history() { return read(KEYS.history, []); },
-  replaceHistory(list) { write(KEYS.history, list || []); },
-  addHistory(item) { const list = this.history().filter(entry => entry.key !== item.key); list.unshift({ ...item, watchedAt: Date.now() }); write(KEYS.history, list.slice(0, 200)); },
-  updateProgress(key, position, duration) { const list = this.history(); const item = list.find(x => x.key === key); if (item) { item.position = position; item.duration = duration; item.watchedAt = Date.now(); write(KEYS.history, list); } },
-  progress(key) { return this.history().find(item => item.key === key) || null; },
-  settings() { return { recordHistory: true, preferNativeHls: true, resumePlayback: true, ...read(KEYS.settings, {}) }; },
-  saveSettings(settings) { write(KEYS.settings, settings); }
-};
+const o={favorites:"cactus:favorites:v2",history:"cactus:history:v2",settings:"cactus:settings:v2"};function c(t,e){try{return JSON.parse(localStorage.getItem(t))??e}catch{return e}}const s={favorites:c(o.favorites,[]),history:c(o.history,[]),settings:{recordHistory:!0,preferNativeHls:!0,resumePlayback:!0,...c(o.settings,{})}};let y=new Set(s.favorites.map(t=>t.key)),a=new Map(s.history.map(t=>[t.key,t]));const f=new Map;let l=!1;function u(){l=!1;for(const[t,e]of f)try{localStorage.setItem(t,JSON.stringify(e))}catch{}f.clear()}function h(t,e){f.set(t,e),!l&&(l=!0,"requestIdleCallback"in window?requestIdleCallback(u,{timeout:700}):setTimeout(u,0))}function v(t){return t.map(e=>({...e}))}function g(t){s.favorites=Array.isArray(t)?t.slice(0,300):[],y=new Set(s.favorites.map(e=>e.key)),h(o.favorites,s.favorites)}function p(t){s.history=Array.isArray(t)?t.slice(0,200):[],a=new Map(s.history.map(e=>[e.key,e])),h(o.history,s.history)}const d={favorites(){return v(s.favorites)},replaceFavorites:g,isFavorite(t){return y.has(t)},setFavorite(t,e){const r=s.favorites.filter(i=>i.key!==t.key);return e&&r.unshift(t),g(r),e},toggleFavorite(t){return this.setFavorite(t,!y.has(t.key))},history(){return v(s.history)},replaceHistory:p,upsertHistory(t){if(!t?.key)return;const r={...a.get(t.key)||{},...t,watchedAt:Date.now()},i=s.history.filter(n=>n.key!==t.key);i.unshift(r),p(i)},addHistory(t){this.upsertHistory(t)},updateProgress(t,e,r,i){const n=a.get(t);n&&this.upsertHistory({...n,position:e,duration:r,...i?{url:i}:{}})},progress(t){const e=a.get(t);return e?{...e}:null},settings(){return{...s.settings}},saveSettings(t){s.settings={...s.settings,...t},h(o.settings,s.settings)},flush:u};window.addEventListener("pagehide",u,{capture:!0});export{d as store};
