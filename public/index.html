@@ -7,10 +7,10 @@
   <meta name="description" content="Cactus TV" />
   <title>Cactus TV</title>
   <link rel="icon" href="/assets/cactus.svg" type="image/svg+xml" />
-  <link rel="modulepreload" href="/js/app.js?v=0.6.1" />
-  <link rel="modulepreload" href="/js/api.js?v=0.6.1" />
-  <link rel="modulepreload" href="/js/storage.js?v=0.6.1" />
-  <link rel="stylesheet" href="/styles.css?v=0.6.1" />
+  <link rel="modulepreload" href="/js/app.js?v=0.6.2" />
+  <link rel="modulepreload" href="/js/api.js?v=0.6.2" />
+  <link rel="modulepreload" href="/js/storage.js?v=0.6.2" />
+  <link rel="stylesheet" href="/styles.css?v=0.6.2" />
 </head>
 <body>
   <header class="topbar" id="topbar">
@@ -107,6 +107,7 @@
     </div>
     <div id="videoShell" class="video-shell controls-visible" tabindex="0" aria-label="视频播放器">
       <video id="videoPlayer" playsinline preload="auto"></video>
+      <div id="playerBrightnessShade" class="player-brightness-shade" aria-hidden="true"></div>
       <button id="playerLock" class="player-lock-button" type="button" aria-label="锁定播放器" title="锁定播放器"></button>
       <div id="playerLoading" class="player-loading">
         <span class="player-spinner" aria-hidden="true"></span>
@@ -176,7 +177,7 @@
   <div id="toast" class="toast hidden" role="status"></div>
 
   <footer><span id="footerName">Cactus TV</span><span id="metadataCredit"></span></footer>
-  <script type="module" src="/js/app.js?v=0.6.1"></script>
-  <script nomodule src="/js/app-legacy.js?v=0.6.1"></script>
+  <script type="module" src="/js/app.js?v=0.6.2"></script>
+  <script nomodule src="/js/app-legacy.js?v=0.6.2"></script>
 </body>
 </html>
