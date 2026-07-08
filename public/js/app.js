@@ -83,7 +83,7 @@ function proxyImage(url) {
   try {
     const parsed = new URL(value);
     if (/(^|\.)doubanio\.com$/i.test(parsed.hostname)) {
-      return `/api/image?rev=3&url=${encodeURIComponent(value)}`;
+      return `/api/image?rev=4&url=${encodeURIComponent(value)}`;
     }
   } catch {
     return '';
@@ -92,9 +92,15 @@ function proxyImage(url) {
   return '';
 }
 
+function displayImage(url) {
+  const value = safeImage(url);
+  return proxyImage(value) || value;
+}
+
 function imageAttributes(url, fallback = '') {
-  const src = safeImage(url);
-  const proxy = proxyImage(url);
+  const original = safeImage(url);
+  const proxy = proxyImage(original);
+  const src = proxy || original;
   if (!src) return '';
   return `src="${escapeHtml(src)}"${proxy ? ` data-proxy-src="${escapeHtml(proxy)}"` : ''}${fallback ? ` data-fallback="${escapeHtml(fallback)}"` : ''}`;
 }
@@ -155,8 +161,8 @@ function renderHero(item) {
     return;
   }
 
-  const backdrop = safeImage(item.backdrop || item.tmdb?.backdrop);
-  const poster = safeImage(item.poster || item.pic || item.tmdb?.poster);
+  const backdrop = displayImage(item.backdrop || item.tmdb?.backdrop);
+  const poster = displayImage(item.poster || item.pic || item.tmdb?.poster);
   const heroImage = backdrop || poster;
 
   els.heroBackdrop.style.backgroundImage = heroImage
@@ -195,12 +201,14 @@ function cardHtml(item, index, context = 'results') {
   const primaryMeta = rating ? `★ ${rating.toFixed(1)}` : item.sourceCount > 1 ? `${item.sourceCount} 个片源` : '';
   const fallback = name.trim().slice(0, 1).toUpperCase() || 'C';
 
+  const eagerHomeImage = context === 'home' && index < 6;
   const image = visual
-    ? `<img loading="lazy" decoding="async" fetchpriority="low" referrerpolicy="no-referrer" ${imageAttributes(visualSource, fallback)} alt="${escapeHtml(name)}">`
+    ? `<img loading="${eagerHomeImage ? 'eager' : 'lazy'}" decoding="async" fetchpriority="${eagerHomeImage && index < 2 ? 'auto' : 'low'}" referrerpolicy="no-referrer" ${imageAttributes(visualSource, fallback)} alt="${escapeHtml(name)}">`
     : `<div class="poster-fallback">${escapeHtml(fallback)}</div>`;
 
   const posterClass = portraitOnly ? 'poster poster-portrait-source' : 'poster';
-  const posterStyle = portraitOnly ? ` style="--poster-ambient:url(&quot;${escapeHtml(visual)}&quot;)"` : '';
+  const ambientImage = displayImage(visualSource);
+  const posterStyle = portraitOnly && ambientImage ? ` style="--poster-ambient:url(&quot;${escapeHtml(ambientImage)}&quot;)"` : '';
 
   return `<article class="media-card" tabindex="0" role="button" aria-label="查看 ${escapeHtml(name)}" data-index="${index}" data-context="${context}">
     <div class="${posterClass}"${posterStyle}>${image}
