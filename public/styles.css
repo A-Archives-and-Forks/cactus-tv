@@ -1052,3 +1052,142 @@ footer { display: flex; justify-content: space-between; gap: 30px; width: calc(1
   .player-controls,.center-play { transition: none; }
   .player-spinner { animation-duration: 1.2s; }
 }
+
+/* v0.4.0: category navigation, result filters and playback failover */
+.category-nav {
+  position: relative;
+  z-index: 8;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: -54px 0 24px;
+  padding: 0 var(--page-pad) 4px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  overscroll-behavior-inline: contain;
+}
+.category-nav::-webkit-scrollbar { display: none; }
+.category-chip {
+  flex: 0 0 auto;
+  min-height: 36px;
+  padding: 0 15px;
+  border: 1px solid rgba(255,255,255,.18);
+  border-radius: 999px;
+  background: rgba(22,22,22,.82);
+  color: #ddd;
+  font-size: 13px;
+  cursor: pointer;
+  backdrop-filter: blur(10px);
+}
+.category-chip:hover,
+.category-chip.active { border-color: #fff; background: #fff; color: #111; }
+
+.result-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 9px;
+  margin: -6px 0 24px;
+  padding: 0;
+}
+.filter-group { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; }
+.filter-label { color: #777; font-size: 11px; }
+.filter-chip,
+.filter-select {
+  min-height: 34px;
+  border: 1px solid rgba(255,255,255,.13);
+  border-radius: 999px;
+  background: #1d1d1d;
+  color: #d7d7d7;
+  font-size: 12px;
+}
+.filter-chip { padding: 0 12px; cursor: pointer; }
+.filter-chip:hover,
+.filter-chip.active { border-color: #fff; background: #fff; color: #111; }
+.filter-select { padding: 0 30px 0 12px; cursor: pointer; }
+.load-more {
+  min-width: 170px;
+  min-height: 43px;
+  display: block;
+  margin: 32px auto 0;
+  padding: 0 20px;
+  border: 1px solid rgba(255,255,255,.2);
+  border-radius: 4px;
+  background: #1c1c1c;
+  color: #fff;
+  font-weight: 750;
+  cursor: pointer;
+}
+.load-more:hover { border-color: #fff; background: #292929; }
+
+.player-skip-button { font-size: 16px; line-height: 1; }
+.player-skip-button:disabled,
+.player-source-switch:disabled { opacity: .35; cursor: not-allowed; }
+.player-source-switch {
+  border-color: rgba(255,255,255,.2);
+  background: #1b1b1b;
+}
+.playback-status {
+  max-width: 280px;
+  overflow: hidden;
+  color: #8f8f8f;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.playback-status.switching { color: var(--warning); }
+.playback-status.ready { color: var(--green); }
+
+.next-episode-prompt {
+  position: absolute;
+  z-index: 7;
+  right: 18px;
+  bottom: 82px;
+  width: min(330px, calc(100% - 36px));
+  padding: 17px;
+  border: 1px solid rgba(255,255,255,.2);
+  border-radius: 6px;
+  background: rgba(18,18,18,.94);
+  box-shadow: 0 18px 45px rgba(0,0,0,.58);
+  backdrop-filter: blur(12px);
+}
+.next-episode-prompt strong,
+.next-episode-prompt span { display: block; }
+.next-episode-prompt strong { font-size: 15px; }
+.next-episode-prompt span { margin-top: 6px; color: #bdbdbd; font-size: 12px; line-height: 1.5; }
+.next-episode-prompt > div { display: flex; gap: 8px; margin-top: 13px; }
+.next-episode-prompt button {
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid rgba(255,255,255,.18);
+  border-radius: 4px;
+  background: #292929;
+  color: #fff;
+  font-size: 12px;
+  cursor: pointer;
+}
+.next-episode-prompt button:first-child { border-color: #fff; background: #fff; color: #111; font-weight: 800; }
+
+.episode.is-current { border-color: var(--green); box-shadow: inset 0 0 0 1px var(--green); }
+.source-choice.is-failed { opacity: .5; }
+
+@media (max-width: 700px) {
+  .category-nav { margin-top: -40px; padding-right: 12px; padding-left: 12px; }
+  .category-chip { min-height: 33px; padding: 0 12px; font-size: 12px; backdrop-filter: none; }
+  .result-filters { gap: 8px; margin-bottom: 18px; }
+  .filter-group { flex-wrap: nowrap; max-width: 100%; overflow-x: auto; scrollbar-width: none; }
+  .filter-group::-webkit-scrollbar { display: none; }
+  .filter-chip { flex: 0 0 auto; }
+  .filter-label { display: none; }
+  .playback-status { max-width: calc(100vw - 24px); white-space: normal; }
+  .next-episode-prompt { right: 12px; bottom: 68px; width: calc(100% - 24px); }
+}
+
+@media (max-width: 520px) {
+  .player-skip-button { display: none; }
+  .player-source-switch { width: 100%; justify-content: center; }
+}
+
+.category-nav:not(.hidden) + .home-sections { margin-top: -12px; }
+.compact-view .category-nav { margin: 18px 0 16px; }
+.compact-view .category-nav:not(.hidden) ~ .content-section { padding-top: 18px; }

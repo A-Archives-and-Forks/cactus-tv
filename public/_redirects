@@ -1,0 +1,6 @@
+/search / 200
+/favorites / 200
+/history / 200
+/detail/* / 200
+/watch/* / 200
+/category/* / 200
