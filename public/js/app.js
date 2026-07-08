@@ -1,11 +1,7 @@
-import { api } from './api.js?v=0.5.0';
-import { store } from './storage.js?v=0.5.0';
-import { loadSubtitle, localSubtitle, playStream, stopStream } from './player.js?v=0.5.0';
-import { createPlayerUI } from './player-ui.js?v=0.5.0';
-import {
-  connectMediaServer, ensureMediaSession, fetchMediaDetail, isMediaProvider, loadMediaLibrary,
-  mediaConnectionFromProvider, mediaConnectionId, mediaImageUrl, removeMediaConnection, resolveMediaEpisode, searchMediaLibraries,
-} from './media.js?v=0.5.0';
+import { api } from './api.js?v=0.4.0';
+import { store } from './storage.js?v=0.4.0';
+import { loadSubtitle, localSubtitle, playStream, stopStream } from './player.js?v=0.4.0';
+import { createPlayerUI } from './player-ui.js?v=0.4.0';
 
 const $ = selector => document.querySelector(selector);
 const els = {
@@ -24,10 +20,6 @@ const els = {
   subtitleSelect: $('#subtitleSelect'), subtitleFile: $('#subtitleFile'), resumeHint: $('#resumeHint'),
   settingsDialog: $('#settingsDialog'), settingsButton: $('#settingsButton'), historyToggle: $('#historyToggle'),
   nativeHlsToggle: $('#nativeHlsToggle'), resumeToggle: $('#resumeToggle'), failoverToggle: $('#failoverToggle'), autoNextToggle: $('#autoNextToggle'),
-  mediaConnectionList: $('#mediaConnectionList'), mediaConnectionForm: $('#mediaConnectionForm'), mediaConnectionReset: $('#mediaConnectionReset'),
-  mediaConnectionCancel: $('#mediaConnectionCancel'), mediaConnectionId: $('#mediaConnectionId'), mediaKind: $('#mediaKind'), mediaName: $('#mediaName'),
-  mediaServerUrl: $('#mediaServerUrl'), mediaUsername: $('#mediaUsername'), mediaPassword: $('#mediaPassword'), mediaToken: $('#mediaToken'),
-  mediaUserId: $('#mediaUserId'), mediaPasswordFields: $('#mediaPasswordFields'), mediaTokenFields: $('#mediaTokenFields'), mediaConnectButton: $('#mediaConnectButton'),
   sourcePills: $('#sourcePills'), metadataCredit: $('#metadataCredit'), toast: $('#toast'),
 };
 
@@ -53,8 +45,6 @@ let routeApplying = false;
 let nextEpisodeTimer = 0;
 let nextEpisodeDeadline = 0;
 let nextEpisodeTarget = null;
-let mediaAuthMode = 'password';
-let mediaProgressInFlight = false;
 
 els.historyToggle.checked = settings.recordHistory;
 els.nativeHlsToggle.checked = settings.preferNativeHls;
@@ -154,22 +144,15 @@ document.addEventListener('error', event => {
 
 function keyOf(item) { return item?.key || `${item?.provider || 'item'}:${item?.id || titleOf(item)}`; }
 function titleOf(item) { return item?.name || item?.title || '未命名'; }
-function currentMediaImage(item, type = 'Primary') {
-  if (!item?.mediaConnectionId || !item?.images) return '';
-  const connection = store.mediaConnection(item.mediaConnectionId);
-  return connection ? mediaImageUrl(connection, item, type) : '';
-}
 function normalizeTitle(value = '') {
   return String(value).normalize('NFKC').toLowerCase().replace(/[\s\-_:：·•.，,()（）\[\]【】]/g, '').replace(/第?[一二三四五六七八九十0-9]+季$/u, '');
 }
 function canonicalItem(item) {
   return {
     key: keyOf(item), id: item?.id, provider: item?.provider, providerName: item?.providerName,
-    name: titleOf(item), pic: item?.pic || item?.poster, backdrop: item?.backdrop, remarks: item?.remarks,
+    name: titleOf(item), pic: item?.pic || item?.poster, remarks: item?.remarks,
     year: item?.year, type: item?.type, mediaType: item?.mediaType,
     sources: item?.sources, tmdb: item?.tmdb, douban: item?.douban,
-    mediaLibrary: Boolean(item?.mediaLibrary), mediaConnectionId: item?.mediaConnectionId, mediaItemId: item?.mediaItemId,
-    images: item?.images,
   };
 }
 
@@ -231,10 +214,8 @@ function renderHero(item) {
     return;
   }
 
-  const liveBackdrop = currentMediaImage(item, 'Backdrop');
-  const livePoster = currentMediaImage(item, 'Primary');
-  const backdrop = displayImage(liveBackdrop || item.backdrop || item.tmdb?.backdrop, item);
-  const poster = displayImage(livePoster || item.poster || item.pic || item.tmdb?.poster, item);
+  const backdrop = displayImage(item.backdrop || item.tmdb?.backdrop, item);
+  const poster = displayImage(item.poster || item.pic || item.tmdb?.poster, item);
   const heroImage = backdrop || poster;
   els.heroBackdrop.style.backgroundImage = heroImage
     ? `url("${heroImage.replace(/["\\]/g, '\\$&')}")`
@@ -242,7 +223,7 @@ function renderHero(item) {
 
   if (!backdrop && poster) {
     els.hero.classList.add('poster-mode');
-    const original = safeImage(livePoster || item.poster || item.pic || item.tmdb?.poster);
+    const original = safeImage(item.poster || item.pic || item.tmdb?.poster);
     els.heroArtwork.src = poster;
     els.heroArtwork.dataset.proxySrc = proxyImage(original, item);
     els.heroArtwork.dataset.originalSrc = original;
@@ -259,8 +240,8 @@ function renderHero(item) {
 
 function cardHtml(item, index, context = 'results') {
   const name = titleOf(item);
-  const explicitBackdropSource = currentMediaImage(item, 'Backdrop') || item.backdrop || item.tmdb?.backdrop || '';
-  const portraitSource = currentMediaImage(item, 'Primary') || item.pic || item.poster || item.tmdb?.poster || explicitBackdropSource;
+  const explicitBackdropSource = item.backdrop || item.tmdb?.backdrop || '';
+  const portraitSource = item.pic || item.poster || item.tmdb?.poster || explicitBackdropSource;
   const explicitBackdrop = safeImage(explicitBackdropSource);
   const portraitVisual = safeImage(portraitSource);
   const preferPortrait = matchMedia('(max-width: 1024px)').matches;
@@ -301,9 +282,7 @@ function bindCards(container, items, context) {
       toggleFavorite(item, favoriteButton);
       return;
     }
-    if (context === 'media' || isMediaProvider(item.provider)) {
-      await openDetail(item);
-    } else if (['home', 'catalog'].includes(context) || !item.provider) {
+    if (['home', 'catalog'].includes(context) || !item.provider) {
       const query = titleOf(item);
       els.searchInput.value = query;
       await search(query);
@@ -477,66 +456,6 @@ async function loadHome({ render = true } = {}) {
   return payload;
 }
 
-function renderMediaRows(sections) {
-  currentView = 'library';
-  setCompactView(false);
-  setActiveTab('library');
-  els.resultsSection.classList.add('hidden');
-  els.homeSections.classList.remove('hidden');
-  els.categoryNav.classList.add('hidden');
-  const list = Array.isArray(sections) ? sections : [];
-  if (!list.length) {
-    renderHero(null);
-    const hasConnections = store.mediaConnections().length > 0;
-    els.homeSections.innerHTML = `<div class="empty-state"><div class="empty-icon">M</div><h3>${hasConnections ? '媒体库暂时没有内容' : '还没有连接媒体库'}</h3><p>${hasConnections ? '请检查服务器是否在线，或重新连接。' : '可以连接自己的 Jellyfin 或 Emby 服务器。'}</p><button class="primary-button" id="openMediaSettings">${hasConnections ? '检查连接' : '添加媒体库'}</button></div>`;
-    $('#openMediaSettings')?.addEventListener('click', () => {
-      els.settingsDialog.showModal();
-      openMediaConnectionForm();
-    });
-    return;
-  }
-  const serverCount = new Set(list.map(section => section.serverName).filter(Boolean)).size;
-  const first = list.find(section => section.items?.length)?.items?.[0];
-  renderHero(first || null);
-  els.homeSections.innerHTML = list.map((section, sectionIndex) => `<section class="catalog-section">
-    <div class="section-heading"><h2>${escapeHtml(serverCount > 1 && section.serverName ? `${section.serverName} · ${section.title}` : section.title)}</h2>
-      <div class="row-controls" aria-label="滚动媒体库"><button type="button" class="row-control" data-media-row="${sectionIndex}" data-dir="-1" aria-label="向左">‹</button><button type="button" class="row-control" data-media-row="${sectionIndex}" data-dir="1" aria-label="向右">›</button></div>
-    </div>
-    <div class="media-row" data-media-section="${sectionIndex}">${(section.items || []).map((item, index) => cardHtml(item, index, 'media')).join('')}</div>
-  </section>`).join('');
-  list.forEach((section, index) => bindCards(els.homeSections.querySelector(`[data-media-section="${index}"]`), section.items || [], 'media'));
-  els.homeSections.querySelectorAll('[data-media-row]').forEach(button => button.addEventListener('click', () => {
-    const row = els.homeSections.querySelector(`[data-media-section="${button.dataset.mediaRow}"]`);
-    row?.scrollBy({ left: Number(button.dataset.dir) * Math.max(row.clientWidth * .82, 320), behavior: 'smooth' });
-  }));
-}
-
-async function loadMediaLibraryView(options = {}) {
-  cancelPendingSearch();
-  currentView = 'library';
-  setActiveTab('library');
-  showNotice('');
-  const connections = store.mediaConnections();
-  if (!connections.length) {
-    renderMediaRows([]);
-    return;
-  }
-  els.homeSections.classList.remove('hidden');
-  els.resultsSection.classList.add('hidden');
-  els.categoryNav.classList.add('hidden');
-  els.homeSections.innerHTML = '<div class="empty-state"><div class="empty-icon">M</div><p>正在连接媒体库…</p></div>';
-  try {
-    const payload = await loadMediaLibrary();
-    renderMediaRows(payload.sections || []);
-    if (payload.errors?.length) showNotice(`部分媒体库不可用：${payload.errors.map(entry => entry.connection?.name || '媒体库').join('、')}`, 'warning');
-  } catch (error) {
-    renderMediaRows([]);
-    showNotice(error.message || '媒体库加载失败', 'error');
-  }
-  if (options.push !== false) navigate('/library', { apply: false, state: { view: 'library' } });
-  if (options.scroll !== false) window.scrollTo({ top: 0, behavior: 'smooth' });
-}
-
 async function search(query, options = {}) {
   const value = String(query || '').trim();
   if (!value) return;
@@ -556,31 +475,10 @@ async function search(query, options = {}) {
   els.homeSections.classList.add('hidden');
   if (options.scroll !== false) window.scrollTo({ top: 0, behavior: 'smooth' });
   try {
-    const [publicResult, mediaResult] = await Promise.allSettled([
-      api.search(value, controller.signal),
-      searchMediaLibraries(value, controller.signal),
-    ]);
+    const payload = await api.search(value, controller.signal);
     if (sequence !== searchSequence) return;
-    const publicPayload = publicResult.status === 'fulfilled' ? publicResult.value : { items: [], errors: [] };
-    const mediaPayload = mediaResult.status === 'fulfilled' ? mediaResult.value : { items: [], errors: [] };
-    const merged = [];
-    const seen = new Set();
-    for (const item of [...(mediaPayload.items || []), ...(publicPayload.items || [])]) {
-      const key = keyOf(item);
-      if (!key || seen.has(key)) continue;
-      seen.add(key);
-      merged.push(item);
-    }
-    if (!merged.length && publicResult.status === 'rejected' && mediaResult.status === 'rejected') {
-      throw publicResult.reason || mediaResult.reason;
-    }
-    render(merged, `“${value}”`, 'SEARCH RESULTS', { context: 'results', filters: true });
-    const errors = [
-      ...(publicPayload.errors || []),
-      ...(mediaPayload.errors || []),
-      ...(publicResult.status === 'rejected' ? [{ provider: '公共片源', error: publicResult.reason?.message }] : []),
-    ];
-    if (errors.length) showNotice(`部分来源不可用：${errors.map(error => error.provider).filter(Boolean).join('、')}`, 'warning');
+    render(payload.items || [], `“${value}”`, 'SEARCH RESULTS', { context: 'results', filters: true });
+    if (payload.errors?.length) showNotice(`部分数据源不可用：${payload.errors.map(error => error.provider).join('、')}`, 'warning');
   } catch (error) {
     if (sequence !== searchSequence || error?.name === 'AbortError') return;
     render([], '搜索失败', 'ERROR', { context: 'results', filters: false });
@@ -621,48 +519,28 @@ function candidatesForDetail(detail, target, preferred = {}) {
       const exactPreferred = lineIndex === preferred.lineIndex && episodeIndex === preferred.episodeIndex;
       const sameEpisode = identity === targetIdentity || (!target.name && episodeIndex === target.index);
       if (!exactPreferred && !sameEpisode) return;
-      const variants = Array.isArray(episode.variants) && episode.variants.length
-        ? episode.variants
-        : [{ name: '', url: episode.playbackUrl || episode.url }];
-      variants.forEach((variant, variantIndex) => {
-        const url = variant?.url || episode.playbackUrl || episode.url;
-        if (!url) return;
-        const baseLineName = line.name || `线路 ${lineIndex + 1}`;
-        candidates.push({
-          detail, episode, variant, lineIndex, episodeIndex,
-          lineName: variant?.name ? `${baseLineName} · ${variant.name}` : baseLineName,
-          provider: detail.provider,
-          providerName: detail.providerName,
-          url,
-          mediaItemId: variant?.mediaItemId || episode.mediaItemId,
-          mediaSourceId: variant?.mediaSourceId,
-          playSessionId: variant?.playSessionId,
-          playMethod: variant?.playMethod,
-          subtitles: variant?.subtitles || episode.subtitles || [],
-          priority: (exactPreferred ? -1000 : lineIndex * 10) + variantIndex,
-        });
+      const url = episode.playbackUrl || episode.url;
+      if (!url) return;
+      candidates.push({
+        detail, episode, lineIndex, episodeIndex,
+        lineName: line.name || `线路 ${lineIndex + 1}`,
+        provider: detail.provider,
+        providerName: detail.providerName,
+        url,
+        priority: exactPreferred ? -1000 : lineIndex,
       });
     });
   });
   if (!candidates.length) {
     const fallbackLine = detail.lines?.[0];
     const fallbackEpisode = fallbackLine?.episodes?.[target.index];
-    const fallbackVariant = fallbackEpisode?.variants?.[0];
-    const fallbackUrl = fallbackVariant?.url || fallbackEpisode?.playbackUrl || fallbackEpisode?.url;
-    if (fallbackEpisode && fallbackUrl) candidates.push({
-      detail, episode: fallbackEpisode, variant: fallbackVariant || {}, lineIndex: 0, episodeIndex: target.index,
+    if (fallbackEpisode) candidates.push({
+      detail, episode: fallbackEpisode, lineIndex: 0, episodeIndex: target.index,
       lineName: fallbackLine.name || '线路 1', provider: detail.provider, providerName: detail.providerName,
-      url: fallbackUrl, mediaItemId: fallbackVariant?.mediaItemId || fallbackEpisode.mediaItemId,
-      mediaSourceId: fallbackVariant?.mediaSourceId, playSessionId: fallbackVariant?.playSessionId,
-      playMethod: fallbackVariant?.playMethod, subtitles: fallbackVariant?.subtitles || fallbackEpisode.subtitles || [], priority: 999,
+      url: fallbackEpisode.playbackUrl || fallbackEpisode.url, priority: 999,
     });
   }
   return candidates.sort((a, b) => a.priority - b.priority);
-}
-
-async function fetchDetailPayload(provider, id, signal) {
-  if (isMediaProvider(provider)) return fetchMediaDetail(provider, id, signal);
-  return api.detail(provider, id, signal);
 }
 
 async function openDetail(item, sourceOverride = null, options = {}) {
@@ -677,24 +555,12 @@ async function openDetail(item, sourceOverride = null, options = {}) {
   if (!els.detailDialog.open) els.detailDialog.showModal();
 
   try {
-    const payload = await fetchDetailPayload(source.provider, source.id);
+    const payload = await api.detail(source.provider, source.id);
     if (sequence !== detailSequence) return null;
     const detail = payload.item;
     const canonicalKey = item.key || detail.key;
     detail.canonicalKey = canonicalKey;
-    const mergedItem = {
-      ...item,
-      provider: detail.provider,
-      id: detail.id,
-      providerName: detail.providerName,
-      key: canonicalKey,
-      pic: detail.pic || item.pic,
-      backdrop: detail.backdrop || item.backdrop,
-      mediaLibrary: Boolean(detail.mediaLibrary || item.mediaLibrary),
-      mediaConnectionId: detail.mediaConnectionId || item.mediaConnectionId,
-      mediaItemId: detail.mediaItemId || item.mediaItemId || detail.id,
-      images: detail.images || item.images,
-    };
+    const mergedItem = { ...item, provider: detail.provider, id: detail.id, providerName: detail.providerName, key: canonicalKey };
     currentDetailContext = { item: mergedItem, detail, source };
     renderDetail(mergedItem, detail);
     return detail;
@@ -707,10 +573,8 @@ async function openDetail(item, sourceOverride = null, options = {}) {
 }
 
 function renderDetail(item, detail) {
-  const detailPosterSource = currentMediaImage(detail, 'Primary') || detail.pic;
-  const detailCoverSource = currentMediaImage(detail, 'Backdrop') || detail.backdrop || detail.tmdb?.backdrop || detailPosterSource;
-  const poster = safeImage(detailPosterSource);
-  const cover = safeImage(detailCoverSource);
+  const poster = safeImage(detail.pic);
+  const cover = safeImage(detail.backdrop || detail.tmdb?.backdrop || detail.pic);
   const lines = detail.lines || [];
   const historyItem = store.progress(detail.canonicalKey || item.key || detail.key);
   const preferredLine = Number(historyItem?.lineIndex ?? 0);
@@ -719,11 +583,11 @@ function renderDetail(item, detail) {
   const firstPlayable = allEpisodes.find(entry => entry.lineIndex === preferredLine && entry.episodeIndex === preferredEpisode) || allEpisodes[0];
   const description = String(detail.content || '').trim();
   const metaValues = [
-    detail.rating ? `★ ${Number(detail.rating).toFixed(1)}` : detail.tmdb?.rating ? `★ ${Number(detail.tmdb.rating).toFixed(1)}` : '',
+    detail.tmdb?.rating ? `★ ${Number(detail.tmdb.rating).toFixed(1)}` : '',
     detail.douban?.rating ? `豆瓣 ${Number(detail.douban.rating).toFixed(1)}` : '',
     detail.year, detail.type, detail.area, detail.lang,
   ].filter(Boolean);
-  const sources = isMediaProvider(detail.provider) ? [] : sortedSources(item, detail.provider);
+  const sources = sortedSources(item, detail.provider);
   const sourceButtons = sources.map(candidate => `<button class="source-choice ${candidate.provider === detail.provider ? 'active' : ''}" data-provider="${escapeHtml(candidate.provider)}" data-id="${escapeHtml(candidate.id)}">${escapeHtml(candidate.providerName || candidate.provider)}${candidate.latency ? `<small>${candidate.latency}ms</small>` : ''}</button>`).join('');
   const credits = [
     detail.director ? `<p><span>导演</span>${escapeHtml(detail.director)}</p>` : '',
@@ -739,12 +603,12 @@ function renderDetail(item, detail) {
   }).join('');
 
   els.detailContent.innerHTML = `<section class="detail-masthead">
-    ${cover ? `<img class="detail-cover" referrerpolicy="no-referrer" ${imageAttributes(detailCoverSource, 'C', detail)} alt="">` : '<div class="detail-cover-fallback">C</div>'}
+    ${cover ? `<img class="detail-cover" referrerpolicy="no-referrer" ${imageAttributes(detail.backdrop || detail.tmdb?.backdrop || detail.pic, 'C', detail)} alt="">` : '<div class="detail-cover-fallback">C</div>'}
     <div class="detail-masthead-shade"></div>
   </section>
   <div class="detail-main">
     <div class="detail-title-row">
-      ${poster ? `<img class="detail-thumb" referrerpolicy="no-referrer" ${imageAttributes(detailPosterSource, 'C', detail)} alt="${escapeHtml(detail.name)}">` : ''}
+      ${poster ? `<img class="detail-thumb" referrerpolicy="no-referrer" ${imageAttributes(detail.pic, 'C', detail)} alt="${escapeHtml(detail.name)}">` : ''}
       <div class="detail-title-copy"><h2>${escapeHtml(detail.name)}</h2><div class="detail-meta">${metaValues.map(value => `<span>${escapeHtml(value)}</span>`).join('')}</div></div>
     </div>
     ${firstPlayable ? `<button class="detail-primary-play" type="button" data-line="${firstPlayable.lineIndex}" data-episode="${firstPlayable.episodeIndex}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 11 7-11 7V5Z" fill="currentColor"/></svg>${historyItem?.position > 5 ? `继续播放 ${formatTime(historyItem.position)}` : `播放${escapeHtml(firstPlayable.episode.name || '第1集')}`}</button>` : ''}
@@ -790,7 +654,7 @@ async function nextPlaybackCandidate(playback) {
     const source = playback.alternativeSources[playback.alternativeCursor++];
     if (!source) return null;
     try {
-      const payload = await fetchDetailPayload(source.provider, source.id);
+      const payload = await api.detail(source.provider, source.id);
       const detail = payload.item;
       detail.canonicalKey = playback.canonicalKey;
       playback.candidateQueue.push(...candidatesForDetail(detail, playback.target, {}));
@@ -842,32 +706,6 @@ function mediaSessionFor(candidate) {
   } catch {}
 }
 
-async function reportMediaProgress(action = 'progress', candidate = currentPlayback?.currentCandidate) {
-  if (!candidate || !isMediaProvider(candidate.provider) || !candidate.mediaItemId) return;
-  if (mediaProgressInFlight && action === 'progress') return;
-  const connection = mediaConnectionFromProvider(candidate.provider);
-  if (!connection) return;
-  mediaProgressInFlight = true;
-  try {
-    const active = await ensureMediaSession(connection);
-    await api.mediaProgress({
-      session: active.sessionId,
-      action,
-      itemId: candidate.mediaItemId,
-      mediaSourceId: candidate.mediaSourceId || '',
-      playSessionId: candidate.playSessionId || '',
-      playMethod: candidate.playMethod || 'Transcode',
-      position: Number.isFinite(els.player.currentTime) ? els.player.currentTime : 0,
-      duration: Number.isFinite(els.player.duration) ? els.player.duration : 0,
-      isPaused: els.player.paused,
-    });
-  } catch (error) {
-    console.warn('媒体库进度同步失败', error);
-  } finally {
-    mediaProgressInFlight = false;
-  }
-}
-
 async function startCandidate(playback, candidate, startAt) {
   if (playback.sequence !== playbackSequence || !els.playerDialog.open) throw new DOMException('播放已取消', 'AbortError');
   playback.currentCandidate = candidate;
@@ -880,7 +718,7 @@ async function startCandidate(playback, candidate, startAt) {
   els.player.playbackRate = rate;
   els.playerTitle.textContent = candidate.detail.name;
   els.playerSubtitle.textContent = `${candidate.episode.name || '播放'} · ${candidate.providerName || candidate.provider} / ${candidate.lineName}`;
-  populateSubtitles(candidate.subtitles || candidate.episode.subtitles || candidate.detail.subtitles || []);
+  populateSubtitles(candidate.detail.subtitles || []);
   updateEpisodeControls();
   mediaSessionFor(candidate);
   const attemptNumber = playback.attemptedUrls.size + 1;
@@ -894,7 +732,6 @@ async function startCandidate(playback, candidate, startAt) {
     store.recordSourceSuccess(candidate.provider);
     setPlaybackStatus(`${candidate.providerName || candidate.provider} · ${candidate.lineName}`, 'ready');
     replaceWatchRoute(candidate, playback);
-    if (isMediaProvider(candidate.provider)) void reportMediaProgress('start', candidate);
   } catch (error) {
     playback.starting = false;
     store.recordSourceFailure(candidate.provider);
@@ -935,26 +772,6 @@ async function openPlayer(detail, episode, options = {}) {
   const sourceItem = options.item || currentDetailContext?.item || detail;
   const lineIndex = Number(options.lineIndex ?? 0);
   const episodeIndex = Number(options.episodeIndex ?? 0);
-  if (!els.playerDialog.open) els.playerDialog.showModal();
-
-  if (isMediaProvider(detail.provider) && episode?.mediaItemId) {
-    els.playerTitle.textContent = detail.name || '媒体库';
-    els.playerSubtitle.textContent = `正在准备 ${episode.name || '视频'}…`;
-    setPlaybackStatus('正在获取播放信息', 'switching');
-    playerUI.reset();
-    try {
-      const resolved = await resolveMediaEpisode(detail, lineIndex, episodeIndex);
-      if (sequence !== playbackSequence) return;
-      detail = resolved.detail;
-      episode = resolved.episode;
-    } catch (error) {
-      if (sequence !== playbackSequence) return;
-      setPlaybackStatus('媒体库播放信息获取失败', '');
-      playerUI.showError(error instanceof Error ? error : new Error('媒体库播放信息获取失败'));
-      return;
-    }
-  }
-
   const canonicalKey = detail.canonicalKey || sourceItem.key || detail.key;
   const historyItem = store.progress(canonicalKey);
   const sameEpisode = historyItem && (
@@ -963,6 +780,7 @@ async function openPlayer(detail, episode, options = {}) {
   );
   const resumeAt = options.resumeAt ?? (settings.resumePlayback && sameEpisode ? Number(historyItem.position || 0) : 0);
   els.resumeHint.textContent = resumeAt > 5 ? `将从 ${formatTime(resumeAt)} 继续` : '';
+  if (!els.playerDialog.open) els.playerDialog.showModal();
 
   currentPlayback = {
     sequence,
@@ -1010,9 +828,6 @@ function saveHistory(position = els.player.currentTime || 0, duration = els.play
     episodeIndex: candidate?.episodeIndex ?? currentPlayback.preferred.episodeIndex,
     sourceName: candidate?.providerName || candidate?.provider || '',
     url: candidate?.url || currentPlayback.playUrl || '',
-    mediaLibrary: Boolean(currentPlayback.item.mediaLibrary),
-    mediaConnectionId: currentPlayback.item.mediaConnectionId || mediaConnectionId(candidate?.provider),
-    mediaItemId: candidate?.mediaItemId || episode?.mediaItemId || currentPlayback.item.mediaItemId,
     position,
     duration,
   };
@@ -1081,82 +896,6 @@ function renderSavedView(view, options = {}) {
   if (options.scroll !== false) window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
-function setMediaAuthMode(mode) {
-  mediaAuthMode = mode === 'token' ? 'token' : 'password';
-  document.querySelectorAll('[data-media-auth]').forEach(button => button.classList.toggle('active', button.dataset.mediaAuth === mediaAuthMode));
-  els.mediaPasswordFields.classList.toggle('hidden', mediaAuthMode !== 'password');
-  els.mediaTokenFields.classList.toggle('hidden', mediaAuthMode !== 'token');
-}
-
-function closeMediaConnectionForm() {
-  els.mediaConnectionForm.classList.add('hidden');
-  els.mediaConnectionForm.reset();
-  els.mediaConnectionId.value = '';
-  els.mediaConnectButton.disabled = false;
-  els.mediaConnectButton.textContent = '连接并保存';
-  setMediaAuthMode('password');
-}
-
-function openMediaConnectionForm(connection = null) {
-  els.mediaConnectionForm.classList.remove('hidden');
-  els.mediaConnectionForm.reset();
-  els.mediaConnectionId.value = connection?.id || '';
-  els.mediaKind.value = connection?.kind || 'jellyfin';
-  els.mediaName.value = connection?.name || '';
-  els.mediaServerUrl.value = connection?.serverUrl || '';
-  els.mediaToken.value = '';
-  els.mediaToken.placeholder = connection ? '留空则继续使用已保存令牌' : '';
-  els.mediaUserId.value = connection?.userId || '';
-  els.mediaUsername.value = connection?.userName || '';
-  els.mediaPassword.value = '';
-  setMediaAuthMode(connection ? 'token' : 'password');
-  requestAnimationFrame(() => els.mediaServerUrl.focus());
-}
-
-function renderMediaConnectionList() {
-  const connections = store.mediaConnections();
-  if (!connections.length) {
-    els.mediaConnectionList.innerHTML = '<div class="media-connection-empty">尚未连接 Jellyfin 或 Emby。</div>';
-    return;
-  }
-  els.mediaConnectionList.innerHTML = connections.map(connection => `<div class="media-connection-item">
-    <div class="media-connection-main"><strong>${escapeHtml(connection.name)} <span class="media-connection-kind">${escapeHtml(connection.kind)}</span></strong><small>${escapeHtml(connection.userName || connection.userId)} · ${escapeHtml(connection.serverUrl)}</small><small>${escapeHtml(connection.serverName || '')}${connection.serverVersion ? ` ${escapeHtml(connection.serverVersion)}` : ''}</small></div>
-    <div class="media-connection-actions"><button type="button" data-media-open="${escapeHtml(connection.id)}">打开</button><button type="button" data-media-test="${escapeHtml(connection.id)}">测试</button><button type="button" data-media-edit="${escapeHtml(connection.id)}">编辑</button><button type="button" class="danger" data-media-delete="${escapeHtml(connection.id)}">删除</button></div>
-  </div>`).join('');
-
-  els.mediaConnectionList.querySelectorAll('[data-media-open]').forEach(button => button.addEventListener('click', () => {
-    els.settingsDialog.close();
-    navigate('/library');
-  }));
-  els.mediaConnectionList.querySelectorAll('[data-media-edit]').forEach(button => button.addEventListener('click', () => {
-    const connection = store.mediaConnection(button.dataset.mediaEdit);
-    if (connection) openMediaConnectionForm(connection);
-  }));
-  els.mediaConnectionList.querySelectorAll('[data-media-test]').forEach(button => button.addEventListener('click', async () => {
-    button.disabled = true;
-    const label = button.textContent;
-    button.textContent = '连接中…';
-    try {
-      await ensureMediaSession(button.dataset.mediaTest, true);
-      renderMediaConnectionList();
-      toast('媒体库连接正常');
-    } catch (error) {
-      toast(error.message || '媒体库连接失败', 'error');
-    } finally {
-      button.disabled = false;
-      button.textContent = label;
-    }
-  }));
-  els.mediaConnectionList.querySelectorAll('[data-media-delete]').forEach(button => button.addEventListener('click', () => {
-    const connection = store.mediaConnection(button.dataset.mediaDelete);
-    if (!connection || !confirm(`删除媒体库“${connection.name}”？`)) return;
-    removeMediaConnection(connection.id);
-    renderMediaConnectionList();
-    toast('媒体库已删除');
-    if (currentView === 'library') loadMediaLibraryView({ push: false, scroll: false });
-  }));
-}
-
 function openSearch() {
   document.body.classList.add('search-open');
   requestAnimationFrame(() => els.searchInput.focus());
@@ -1180,7 +919,6 @@ function parseRoute() {
   const category = path.match(/^\/category\/([^/]+)$/);
   if (category) return { type: 'category', id: decodeURIComponent(category[1]) };
   if (path === '/search') return { type: 'search', query: new URLSearchParams(location.search).get('q') || '' };
-  if (path === '/library') return { type: 'library' };
   if (path === '/favorites') return { type: 'favorites' };
   if (path === '/history') return { type: 'history' };
   return { type: 'home' };
@@ -1232,8 +970,6 @@ async function applyRoute() {
         els.searchInput.value = route.query;
         await search(route.query, { push: false, scroll: false });
       } else openSearch();
-    } else if (route.type === 'library') {
-      await loadMediaLibraryView({ push: false, scroll: false });
     } else if (route.type === 'favorites' || route.type === 'history') {
       renderSavedView(route.type, { push: false, scroll: false });
     } else if (route.type === 'category') {
@@ -1242,7 +978,7 @@ async function applyRoute() {
     } else if (route.type === 'detail') {
       await openDetail({ provider: route.provider, id: route.id, key: `${route.provider}:${route.id}` }, null, { push: false });
     } else if (route.type === 'watch') {
-      const payload = await fetchDetailPayload(route.provider, route.id);
+      const payload = await api.detail(route.provider, route.id);
       const detail = payload.item;
       const lineIndex = Math.max(0, Math.min(route.line, (detail.lines || []).length - 1));
       const episodes = detail.lines?.[lineIndex]?.episodes || [];
@@ -1307,55 +1043,7 @@ els.playerDialog.addEventListener('cancel', event => { event.preventDefault(); c
   else dialog.close();
 }));
 
-els.settingsButton.addEventListener('click', () => {
-  renderMediaConnectionList();
-  closeMediaConnectionForm();
-  els.settingsDialog.showModal();
-});
-els.mediaConnectionReset.addEventListener('click', () => openMediaConnectionForm());
-els.mediaConnectionCancel.addEventListener('click', closeMediaConnectionForm);
-document.querySelectorAll('[data-media-auth]').forEach(button => button.addEventListener('click', () => setMediaAuthMode(button.dataset.mediaAuth)));
-els.mediaConnectionForm.addEventListener('submit', async event => {
-  event.preventDefault();
-  const existingId = els.mediaConnectionId.value;
-  const existing = existingId ? store.mediaConnection(existingId) : null;
-  const input = {
-    kind: els.mediaKind.value,
-    name: els.mediaName.value.trim(),
-    serverUrl: els.mediaServerUrl.value.trim(),
-    deviceId: existing?.deviceId,
-  };
-  if (mediaAuthMode === 'password') {
-    input.username = els.mediaUsername.value.trim();
-    input.password = els.mediaPassword.value;
-    if (!input.username || !input.password) {
-      toast('请填写用户名和密码', 'error');
-      return;
-    }
-  } else {
-    input.token = els.mediaToken.value.trim() || existing?.token || '';
-    input.userId = els.mediaUserId.value.trim() || existing?.userId || '';
-    if (!input.token || !input.userId) {
-      toast('请填写访问令牌和用户 ID', 'error');
-      return;
-    }
-  }
-  els.mediaConnectButton.disabled = true;
-  els.mediaConnectButton.textContent = '正在连接…';
-  try {
-    const connection = await connectMediaServer(input, existingId);
-    renderMediaConnectionList();
-    closeMediaConnectionForm();
-    toast(`已连接 ${connection.name}`);
-    if (currentView === 'library') loadMediaLibraryView({ push: false, scroll: false });
-  } catch (error) {
-    toast(error.message || '媒体库连接失败', 'error');
-  } finally {
-    els.mediaConnectButton.disabled = false;
-    els.mediaConnectButton.textContent = '连接并保存';
-    els.mediaPassword.value = '';
-  }
-});
+els.settingsButton.addEventListener('click', () => els.settingsDialog.showModal());
 [els.historyToggle, els.nativeHlsToggle, els.resumeToggle, els.failoverToggle, els.autoNextToggle].forEach(input => input.addEventListener('change', () => {
   settings = {
     recordHistory: els.historyToggle.checked,
@@ -1402,14 +1090,9 @@ els.player.addEventListener('timeupdate', () => {
   if (!currentPlayback || Date.now() - currentPlayback.lastSync < 15000) return;
   currentPlayback.lastSync = Date.now();
   saveHistory();
-  void reportMediaProgress('progress');
-});
-els.player.addEventListener('pause', () => {
-  if (currentPlayback && !els.player.ended) void reportMediaProgress('progress');
 });
 els.player.addEventListener('ended', () => {
   saveHistory(els.player.duration || els.player.currentTime || 0, els.player.duration || 0);
-  void reportMediaProgress('stop');
   showNextEpisodePrompt();
 });
 els.player.addEventListener('cactus:error', event => {
@@ -1420,11 +1103,9 @@ els.player.addEventListener('cactus:error', event => {
 });
 
 els.playerDialog.addEventListener('close', () => {
-  const closingCandidate = currentPlayback?.currentCandidate;
   playbackSequence += 1;
   cancelNextEpisode();
   saveHistory();
-  if (closingCandidate) void reportMediaProgress('stop', closingCandidate);
   playerUI.setRetry(null);
   stopStream(els.player);
   currentPlayback = null;
@@ -1465,12 +1146,8 @@ window.addEventListener('unhandledrejection', event => {
     document.title = siteName;
     if (health.tmdbReady) els.metadataCredit.innerHTML = '<a class="footer-link" href="https://www.themoviedb.org" target="_blank" rel="noreferrer">Metadata by TMDB</a>';
     else els.metadataCredit.textContent = '影片资料来自豆瓣';
-    const mediaConnections = store.mediaConnections();
-    els.sourcePills.innerHTML = [
-      ...(health.providers || []).map(provider => `<span class="source-pill ${provider.proxyEnabled ? 'proxied' : ''}">${escapeHtml(provider.name)}</span>`),
-      ...mediaConnections.map(connection => `<span class="source-pill">${escapeHtml(connection.name)}</span>`),
-    ].join('');
-    if (!health.providers?.length && !mediaConnections.length) showNotice('尚未配置内容来源。可以打开设置连接 Jellyfin / Emby，或在 /admin.html 添加兼容接口。', 'warning');
+    els.sourcePills.innerHTML = (health.providers || []).map(provider => `<span class="source-pill ${provider.proxyEnabled ? 'proxied' : ''}">${escapeHtml(provider.name)}</span>`).join('');
+    if (!health.providers?.length) showNotice('尚未配置数据源。请打开 /admin.html 添加兼容接口。', 'warning');
   } catch (error) {
     showNotice(error.message || '后端函数未连接', 'error');
   }

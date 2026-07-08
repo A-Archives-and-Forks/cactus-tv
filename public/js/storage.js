@@ -3,7 +3,6 @@ const KEYS = {
   history: 'cactus:history:v2',
   settings: 'cactus:settings:v3',
   sourceHealth: 'cactus:source-health:v1',
-  mediaConnections: 'cactus:media-connections:v1',
 };
 
 function read(key, fallback) {
@@ -24,7 +23,6 @@ const state = {
     ...read(KEYS.settings, {}),
   },
   sourceHealth: read(KEYS.sourceHealth, {}),
-  mediaConnections: read(KEYS.mediaConnections, []),
 };
 
 let favoriteKeys = new Set(state.favorites.map(item => item.key));
@@ -78,45 +76,6 @@ function saveHealth(provider, patch) {
     .slice(0, 80);
   state.sourceHealth = Object.fromEntries(entries);
   scheduleWrite(KEYS.sourceHealth, state.sourceHealth);
-}
-
-
-function normalizeMediaConnection(value) {
-  if (!value || typeof value !== 'object') return null;
-  const id = String(value.id || '').trim();
-  const kind = String(value.kind || '').toLowerCase();
-  const serverUrl = String(value.serverUrl || '').trim();
-  const token = String(value.token || '').trim();
-  const userId = String(value.userId || '').trim();
-  if (!id || !['jellyfin', 'emby'].includes(kind) || !serverUrl || !token || !userId) return null;
-  return {
-    id,
-    kind,
-    name: String(value.name || value.serverName || (kind === 'jellyfin' ? 'Jellyfin' : 'Emby')).trim().slice(0, 80),
-    serverUrl,
-    token,
-    userId,
-    userName: String(value.userName || '').trim().slice(0, 120),
-    serverName: String(value.serverName || '').trim().slice(0, 120),
-    serverVersion: String(value.serverVersion || '').trim().slice(0, 80),
-    deviceId: String(value.deviceId || `cactus-${id}`).trim().slice(0, 120),
-    sessionId: String(value.sessionId || '').trim(),
-    sessionExpires: Number(value.sessionExpires || 0),
-    updatedAt: Number(value.updatedAt || Date.now()),
-  };
-}
-
-state.mediaConnections = (Array.isArray(state.mediaConnections) ? state.mediaConnections : [])
-  .map(normalizeMediaConnection)
-  .filter(Boolean)
-  .slice(0, 12);
-
-function replaceMediaConnections(list) {
-  state.mediaConnections = (Array.isArray(list) ? list : [])
-    .map(normalizeMediaConnection)
-    .filter(Boolean)
-    .slice(0, 12);
-  scheduleWrite(KEYS.mediaConnections, state.mediaConnections);
 }
 
 export const store = {
@@ -187,31 +146,6 @@ export const store = {
     const recentSuccess = Date.now() - Number(entry.lastSuccess || 0) < 7 * 864e5 ? 2 : 0;
     const recentFailure = Date.now() - Number(entry.lastFailure || 0) < 24 * 36e5 ? 2 : 0;
     return successes * 2 - failures * 3 + recentSuccess - recentFailure;
-  },
-
-  mediaConnections() { return cloneList(state.mediaConnections); },
-  mediaConnection(id) {
-    const item = state.mediaConnections.find(entry => entry.id === id);
-    return item ? { ...item } : null;
-  },
-  saveMediaConnection(connection) {
-    const normalized = normalizeMediaConnection(connection);
-    if (!normalized) throw new Error('媒体库配置无效');
-    const next = state.mediaConnections.filter(entry => entry.id !== normalized.id);
-    next.unshift({ ...normalized, updatedAt: Date.now() });
-    replaceMediaConnections(next);
-    return { ...normalized };
-  },
-  removeMediaConnection(id) {
-    replaceMediaConnections(state.mediaConnections.filter(entry => entry.id !== id));
-  },
-  updateMediaSession(id, patch = {}) {
-    const current = state.mediaConnections.find(entry => entry.id === id);
-    if (!current) return null;
-    const updated = normalizeMediaConnection({ ...current, ...patch, id: current.id, updatedAt: Date.now() });
-    if (!updated) return null;
-    replaceMediaConnections([updated, ...state.mediaConnections.filter(entry => entry.id !== id)]);
-    return { ...updated };
   },
 
   flush,

@@ -1,6 +1,6 @@
 const memoryCache = new Map();
 const inflight = new Map();
-const CACHE_PREFIX = 'cactus:api:v5:';
+const CACHE_PREFIX = 'cactus:api:v4:';
 
 function now() { return Date.now(); }
 
@@ -108,40 +108,6 @@ export const api = {
     dedupe: false,
     signal,
     timeout: 14_000,
-  }),
-  mediaSession: connection => requestJson('/api/media/session', {
-    method: 'POST',
-    body: JSON.stringify(connection),
-    dedupe: false,
-    timeout: 22_000,
-  }),
-  mediaLibrary: (sessionId, options = {}, signal) => {
-    const params = new URLSearchParams({ session: sessionId, mode: options.mode || 'home' });
-    if (options.q) params.set('q', options.q);
-    if (options.parent) params.set('parent', options.parent);
-    if (options.start != null) params.set('start', String(options.start));
-    if (options.limit != null) params.set('limit', String(options.limit));
-    return requestJson(`/api/media/library?${params.toString()}`, {
-      dedupe: false,
-      signal,
-      timeout: options.mode === 'home' ? 35_000 : 24_000,
-    });
-  },
-  mediaDetail: (sessionId, id, signal) => requestJson(`/api/media/detail?session=${encodeURIComponent(sessionId)}&id=${encodeURIComponent(id)}`, {
-    dedupe: false,
-    signal,
-    timeout: 35_000,
-  }),
-  mediaPlayback: (sessionId, id, signal) => requestJson(`/api/media/playback?session=${encodeURIComponent(sessionId)}&id=${encodeURIComponent(id)}`, {
-    dedupe: false,
-    signal,
-    timeout: 24_000,
-  }),
-  mediaProgress: payload => requestJson('/api/media/progress', {
-    method: 'POST',
-    body: JSON.stringify(payload),
-    dedupe: false,
-    timeout: 10_000,
   }),
   clear() {
     memoryCache.clear();
