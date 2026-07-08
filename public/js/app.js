@@ -1,6 +1,7 @@
 import { api } from './api.js';
 import { store } from './storage.js';
-import { loadSubtitle, localSubtitle, playStream, stopStream } from './player.js';
+import { loadSubtitle, localSubtitle, playStream, stopStream } from './player.js?v=0.3.0';
+import { createPlayerUI } from './player-ui.js?v=0.3.0';
 
 const $ = selector => document.querySelector(selector);
 const els = {
@@ -9,8 +10,8 @@ const els = {
   searchForm: $('#searchForm'), searchInput: $('#searchInput'), homeSections: $('#homeSections'), resultsSection: $('#resultsSection'),
   mediaGrid: $('#mediaGrid'), emptyState: $('#emptyState'), skeletons: $('#skeletons'), notice: $('#notice'), sectionTitle: $('#sectionTitle'),
   sectionKicker: $('#sectionKicker'), resultCount: $('#resultCount'), detailDialog: $('#detailDialog'), detailContent: $('#detailContent'),
-  playerDialog: $('#playerDialog'), player: $('#videoPlayer'), playerTitle: $('#playerTitle'), playerSubtitle: $('#playerSubtitle'),
-  playerMessage: $('#playerMessage'), subtitleSelect: $('#subtitleSelect'), subtitleFile: $('#subtitleFile'), resumeHint: $('#resumeHint'),
+  playerDialog: $('#playerDialog'), playerShell: $('#videoShell'), player: $('#videoPlayer'), playerTitle: $('#playerTitle'), playerSubtitle: $('#playerSubtitle'),
+  playerMessage: $('#playerMessage'), playerRetry: $('#playerRetry'), subtitleSelect: $('#subtitleSelect'), subtitleFile: $('#subtitleFile'), resumeHint: $('#resumeHint'),
   settingsDialog: $('#settingsDialog'), settingsButton: $('#settingsButton'), searchToggle: $('#searchToggle'), searchClose: $('#searchClose'), historyToggle: $('#historyToggle'), nativeHlsToggle: $('#nativeHlsToggle'),
   resumeToggle: $('#resumeToggle'), sourcePills: $('#sourcePills'), metadataCredit: $('#metadataCredit'), toast: $('#toast'),
 };
@@ -21,10 +22,19 @@ let currentPlayback = null;
 let featuredItem = null;
 let activeSearchController = null;
 let searchSequence = 0;
+let playbackSequence = 0;
 
 els.historyToggle.checked = settings.recordHistory;
 els.nativeHlsToggle.checked = settings.preferNativeHls;
 els.resumeToggle.checked = settings.resumePlayback;
+
+const playerUI = createPlayerUI({
+  dialog: els.playerDialog,
+  shell: els.playerShell,
+  video: els.player,
+  message: els.playerMessage,
+  retryButton: els.playerRetry,
+});
 function tryNextImageSource(img) {
   const original = img.dataset.originalSrc || '';
   if (original && !img.dataset.originalTried) {
@@ -442,24 +452,65 @@ async function openDetail(item, sourceOverride = null) {
 }
 
 async function openPlayer(detail, episode) {
+  const sequence = ++playbackSequence;
+  const playUrl = episode.playbackUrl || episode.url;
   els.playerTitle.textContent = detail.name;
   els.playerSubtitle.textContent = episode.name;
-  els.playerMessage.classList.add('hidden');
   if (!els.playerDialog.open) els.playerDialog.showModal();
-  const historyItem = store.progress(detail.key);
-  const resumeAt = settings.resumePlayback && historyItem?.url === episode.playbackUrl ? Number(historyItem.position || 0) : 0;
-  els.resumeHint.textContent = resumeAt > 5 ? `将从 ${formatTime(resumeAt)} 继续` : '';
-  currentPlayback = { detail, episode, item: { ...savedItem(detail), key: detail.key }, lastSync: 0 };
-  populateSubtitles(detail.subtitles || []);
-  if (settings.recordHistory) saveHistory(0, 0);
-  try {
-    await playStream(els.player, episode.playbackUrl || episode.url, settings.preferNativeHls, resumeAt);
-  } catch (error) {
-    els.playerMessage.textContent = `${error.message}。请检查播放地址、媒体域名白名单、CORS 或受控代理配置。`;
-    els.playerMessage.classList.remove('hidden');
-  }
-}
 
+  const historyItem = store.progress(detail.key);
+  const resumeAt = settings.resumePlayback && historyItem?.url === playUrl
+    ? Number(historyItem.position || 0)
+    : 0;
+  els.resumeHint.textContent = resumeAt > 5 ? `将从 ${formatTime(resumeAt)} 继续` : '';
+  currentPlayback = {
+    detail,
+    episode,
+    playUrl,
+    item: { ...savedItem(detail), key: detail.key },
+    lastSync: 0,
+  };
+  populateSubtitles(detail.subtitles || []);
+  playerUI.reset();
+  requestAnimationFrame(() => playerUI.focus());
+
+  if ('mediaSession' in navigator) {
+    try {
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: detail.name || 'Cactus TV',
+        artist: episode.name || '',
+        artwork: detail.pic ? [{ src: displayImage(detail.pic, detail) }] : [],
+      });
+      navigator.mediaSession.setActionHandler('play', () => els.player.play());
+      navigator.mediaSession.setActionHandler('pause', () => els.player.pause());
+      navigator.mediaSession.setActionHandler('seekbackward', event => {
+        els.player.currentTime = Math.max(0, els.player.currentTime - (event.seekOffset || 10));
+      });
+      navigator.mediaSession.setActionHandler('seekforward', event => {
+        els.player.currentTime = Math.min(els.player.duration || Infinity, els.player.currentTime + (event.seekOffset || 10));
+      });
+    } catch {}
+  }
+
+  const startPlayback = async startAt => {
+    if (sequence !== playbackSequence || !els.playerDialog.open) return;
+    playerUI.reset();
+    try {
+      await playStream(els.player, playUrl, settings.preferNativeHls, startAt);
+    } catch (error) {
+      if (sequence !== playbackSequence || !els.playerDialog.open) return;
+      playerUI.showError(new Error(`${error.message}。可尝试重新加载、切换线路，或检查媒体域名白名单与代理配置。`));
+    }
+  };
+
+  playerUI.setRetry(() => {
+    const retryAt = Number.isFinite(els.player.currentTime) ? els.player.currentTime : resumeAt;
+    startPlayback(retryAt);
+  });
+
+  if (settings.recordHistory) saveHistory(resumeAt, Number(historyItem?.duration || 0));
+  await startPlayback(resumeAt);
+}
 function populateSubtitles(subtitles) {
   els.subtitleSelect.innerHTML = '<option value="">关闭</option>' + subtitles.map((subtitle, index) => `<option value="${index}">${escapeHtml(subtitle.name)} · ${escapeHtml(subtitle.lang || '')}</option>`).join('');
   els.subtitleSelect._items = subtitles;
@@ -573,9 +624,18 @@ els.player.addEventListener('timeupdate', () => {
   saveHistory();
 });
 els.playerDialog.addEventListener('close', () => {
+  playbackSequence += 1;
   saveHistory();
+  playerUI.setRetry(null);
   stopStream(els.player);
   currentPlayback = null;
+  if ('mediaSession' in navigator) {
+    try { navigator.mediaSession.metadata = null; } catch {}
+  }
+});
+window.addEventListener('pagehide', () => saveHistory());
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') saveHistory();
 });
 window.addEventListener('keydown', event => {
   if (event.key === 'Escape' && document.body.classList.contains('search-open')) closeSearch();
