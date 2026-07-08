@@ -27,7 +27,7 @@ els.heroArtwork.addEventListener('error', () => {
   const proxy = els.heroArtwork.dataset.proxySrc || '';
   if (proxy && !els.heroArtwork.dataset.proxyTried) {
     els.heroArtwork.dataset.proxyTried = '1';
-    els.heroArtwork.src = proxy;
+    els.heroArtwork.src = `${proxy}${proxy.includes('?') ? '&' : '?'}retry=${Date.now()}`;
     return;
   }
   els.hero.classList.remove('poster-mode');
@@ -76,14 +76,25 @@ function safeImage(url) {
   }
 }
 
-function proxyImage(url) {
+function doubanIdOf(item) {
+  const candidates = [item?.douban?.id, item?.doubanId, !item?.provider ? item?.id : ''];
+  const value = candidates.map(candidate => String(candidate || '').trim()).find(candidate => /^\d{5,12}$/.test(candidate));
+  return value || '';
+}
+
+function proxyImage(url, item = null) {
   const value = safeImage(url);
   if (!value) return '';
 
   try {
     const parsed = new URL(value);
     if (/(^|\.)doubanio\.com$/i.test(parsed.hostname)) {
-      return `/api/image?rev=4&url=${encodeURIComponent(value)}`;
+      const params = new URLSearchParams({ rev: '5', url: value });
+      const doubanId = doubanIdOf(item);
+      const title = String(item?.title || item?.name || item?.douban?.title || '').trim();
+      if (doubanId) params.set('id', doubanId);
+      if (title) params.set('title', title.slice(0, 100));
+      return `/api/image?${params.toString()}`;
     }
   } catch {
     return '';
@@ -92,14 +103,14 @@ function proxyImage(url) {
   return '';
 }
 
-function displayImage(url) {
+function displayImage(url, item = null) {
   const value = safeImage(url);
-  return proxyImage(value) || value;
+  return proxyImage(value, item) || value;
 }
 
-function imageAttributes(url, fallback = '') {
+function imageAttributes(url, fallback = '', item = null) {
   const original = safeImage(url);
-  const proxy = proxyImage(original);
+  const proxy = proxyImage(original, item);
   const src = proxy || original;
   if (!src) return '';
   return `src="${escapeHtml(src)}"${proxy ? ` data-proxy-src="${escapeHtml(proxy)}"` : ''}${fallback ? ` data-fallback="${escapeHtml(fallback)}"` : ''}`;
@@ -161,8 +172,8 @@ function renderHero(item) {
     return;
   }
 
-  const backdrop = displayImage(item.backdrop || item.tmdb?.backdrop);
-  const poster = displayImage(item.poster || item.pic || item.tmdb?.poster);
+  const backdrop = displayImage(item.backdrop || item.tmdb?.backdrop, item);
+  const poster = displayImage(item.poster || item.pic || item.tmdb?.poster, item);
   const heroImage = backdrop || poster;
 
   els.heroBackdrop.style.backgroundImage = heroImage
@@ -172,7 +183,7 @@ function renderHero(item) {
   if (!backdrop && poster) {
     els.hero.classList.add('poster-mode');
     els.heroArtwork.src = poster;
-    els.heroArtwork.dataset.proxySrc = proxyImage(item.poster || item.pic || item.tmdb?.poster);
+    els.heroArtwork.dataset.proxySrc = proxyImage(item.poster || item.pic || item.tmdb?.poster, item);
     els.heroArtwork.alt = titleOf(item);
   }
 
@@ -203,11 +214,11 @@ function cardHtml(item, index, context = 'results') {
 
   const eagerHomeImage = context === 'home' && index < 6;
   const image = visual
-    ? `<img loading="${eagerHomeImage ? 'eager' : 'lazy'}" decoding="async" fetchpriority="${eagerHomeImage && index < 2 ? 'auto' : 'low'}" referrerpolicy="no-referrer" ${imageAttributes(visualSource, fallback)} alt="${escapeHtml(name)}">`
+    ? `<img loading="${eagerHomeImage ? 'eager' : 'lazy'}" decoding="async" fetchpriority="${eagerHomeImage && index < 2 ? 'auto' : 'low'}" referrerpolicy="no-referrer" ${imageAttributes(visualSource, fallback, item)} alt="${escapeHtml(name)}">`
     : `<div class="poster-fallback">${escapeHtml(fallback)}</div>`;
 
   const posterClass = portraitOnly ? 'poster poster-portrait-source' : 'poster';
-  const ambientImage = displayImage(visualSource);
+  const ambientImage = displayImage(visualSource, item);
   const posterStyle = portraitOnly && ambientImage ? ` style="--poster-ambient:url(&quot;${escapeHtml(ambientImage)}&quot;)"` : '';
 
   return `<article class="media-card" tabindex="0" role="button" aria-label="查看 ${escapeHtml(name)}" data-index="${index}" data-context="${context}">
@@ -365,12 +376,12 @@ async function openDetail(item, sourceOverride = null) {
     }).join('');
 
     els.detailContent.innerHTML = `<section class="detail-masthead">
-      ${cover ? `<img class="detail-cover" referrerpolicy="no-referrer" ${imageAttributes(detail.backdrop || detail.tmdb?.backdrop || detail.pic, 'C')} alt="">` : '<div class="detail-cover-fallback">C</div>'}
+      ${cover ? `<img class="detail-cover" referrerpolicy="no-referrer" ${imageAttributes(detail.backdrop || detail.tmdb?.backdrop || detail.pic, 'C', detail)} alt="">` : '<div class="detail-cover-fallback">C</div>'}
       <div class="detail-masthead-shade"></div>
     </section>
     <div class="detail-main">
       <div class="detail-title-row">
-        ${poster ? `<img class="detail-thumb" referrerpolicy="no-referrer" ${imageAttributes(detail.pic, 'C')} alt="${escapeHtml(detail.name)}">` : ''}
+        ${poster ? `<img class="detail-thumb" referrerpolicy="no-referrer" ${imageAttributes(detail.pic, 'C', detail)} alt="${escapeHtml(detail.name)}">` : ''}
         <div class="detail-title-copy">
           <h2>${escapeHtml(detail.name)}</h2>
           <div class="detail-meta">${metaValues.map(value => `<span>${escapeHtml(value)}</span>`).join('')}</div>
