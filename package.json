@@ -1,13 +1,13 @@
 {
   "name": "cactus-tv",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "private": true,
-  "description": "Cactus TV for Cloudflare Pages, Pages Functions and D1.",
+  "description": "Cactus TV — a private media player for Cloudflare Pages with CMS, Jellyfin and Emby support.",
   "scripts": {
     "dev": "wrangler pages dev public",
     "vendor": "node -e \"require('node:fs').copyFileSync('node_modules/hls.js/dist/hls.min.js', 'public/vendor/hls.min.js')\"",
     "build:functions": "wrangler pages functions build functions --outdir .functions-build",
-    "check:js": "node --check public/js/api.js && node --check public/js/storage.js && node --check public/js/player.js && node --check public/js/player-ui.js && node --check public/js/app.js && node --check public/js/admin.js",
+    "check:js": "node --check public/js/api.js && node --check public/js/storage.js && node --check public/js/media.js && node --check public/js/player.js && node --check public/js/player-ui.js && node --check public/js/app.js && node --check public/js/admin.js",
     "preflight": "node scripts/preflight.mjs",
     "check": "npm run build:functions && npm run check:js && npm run preflight",
     "smoke": "node scripts/smoke.mjs",

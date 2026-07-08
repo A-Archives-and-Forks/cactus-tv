@@ -1,180 +1,108 @@
 # Cactus TV
 
-当前版本：**v0.4.0**
+Cactus TV 是一个运行在 Cloudflare Pages 上的私人媒体首页和网页播放器。当前版本：**v0.5.0**。
 
-Cactus TV 是一个部署在 Cloudflare Pages 上的私人影视检索与播放前端。它提供首页推荐、聚合搜索、片源切换、HLS 播放、观看记录、字幕和管理后台，但**项目本身不内置、不提供、也不推荐任何影视数据源**。
+它可以连接你自己的 **Jellyfin / Emby**，也保留了兼容影视接口的搜索与播放功能。项目不附带媒体文件、服务器账号或可用片源。
 
-前台地址：`/`  
-管理后台：`/admin.html`
+## 能做什么
 
-> Cactus TV 的定位是播放器与片源管理界面，不是影视内容服务。部署完成后，需要由使用者自行配置合法、可用且已获授权的数据接口。
+- 连接多个 Jellyfin、Emby 服务器
+- 浏览媒体库、继续观看和最近加入
+- 搜索电影、剧集和单集
+- 展示海报、简介、演员、季和分集
+- 原画直连；浏览器不兼容时自动尝试 HLS 转码
+- 读取服务器字幕，并支持本地 VTT / SRT 字幕
+- 将播放开始、暂停、进度和停止状态同步回媒体服务器
+- 多来源搜索、线路切换、失败自动换源
+- 自动下一集、断点续播、收藏和本机观看记录
+- 手机、平板和桌面端自适应
 
+目前不支持音乐、照片、Live TV、Emby Connect 和局域网自动发现。
 
-## 从 v0.3.x 升级到 v0.4.0
+## 连接 Jellyfin
 
-已经通过 GitHub 连接 Cloudflare Pages 的项目，升级时只需要把 v0.4.0 的仓库文件提交到原 GitHub 仓库。Cloudflare 会按现有设置自动重新部署。
-
-本次升级：
-
-- 不新增 D1 表，也不需要再次执行 SQL
-- 不新增 Binding、环境变量或 Secret
-- 不需要进入 Cloudflare 控制台修改构建设置
-- `public/_redirects` 会随 GitHub 提交自动部署，用于详情页和播放页直达路由
-- 原有数据源、后台设置、字幕、收藏和观看历史均可继续使用
-
-建议直接覆盖同名文件并提交，不要只上传 `public` 文件夹，因为 v0.4.0 同时修改了 `functions/api/search.ts`。
-
-## 功能
-
-### 前台
-
-- 响应式影视首页，适配桌面、平板和手机
-- 豆瓣或 TMDB 首页元数据
-- 多数据源并发搜索与结果去重
-- 同一影片的多片源切换
-- 播放失败自动尝试同源备用线路与其他数据源，并保留当前进度
-- 根据本机历史成功率自动调整备用片源顺序
-- 电影、剧集和分集播放
-- 上一集、下一集与播放结束自动续播
-- 原生 HLS 与内置 hls.js 播放
-- 收藏片单、观看历史和断点续播
-- 首页分类入口、搜索结果类型/年份/片源筛选
-- 搜索结果分批渲染，减少低性能设备首屏压力
-- 详情、播放、分类、搜索、收藏和历史支持可刷新直达路由
-- 在线字幕与本地 VTT/SRT 字幕
-- 豆瓣海报代理、缓存与失败重试
-- 播放错误、接口错误和空状态提示
-- Cloudflare Cache API 搜索缓存与最多 5 路上游并发控制
-
-### 管理后台
-
-- 使用 `ADMIN_TOKEN` 保护后台接口
-- 添加、编辑、启用、停用和删除数据源
-- 设置数据源优先级
-- 数据源测速与状态记录
-- 配置媒体域名白名单
-- 按数据源启用受控播放代理
-- 设置站点名称、首页公告和元数据来源
-- 为指定影片添加或删除在线字幕
-
-### 数据保存
-
-D1 数据库保存：
-
-- 站点设置
-- 数据源配置
-- 数据源测速结果
-- 在线字幕
-
-当前浏览器保存：
-
-- 收藏片单
-- 观看历史
-- 播放进度
-- 播放偏好
-
-浏览器数据不会自动同步到其他设备，也不会写入 D1。
-
-## 项目特色
-
-### 轻量部署
-
-前端由 Cloudflare Pages 托管，API 使用 Pages Functions，配置数据使用 D1。项目没有前端打包步骤，仓库连接完成后即可自动部署。
-
-### 数据源与播放器分离
-
-项目不绑定固定片源。兼容的 Apple CMS JSON 接口由部署者在后台自行配置，后续可以独立添加、停用或更换。
-
-### 受控播放代理
-
-播放代理不是开放代理。代理请求必须同时满足：
-
-- 数据源已启用播放代理
-- 目标地址使用 HTTPS
-- 目标域名是数据源接口域名或已配置的媒体白名单域名
-- 返回内容属于视频、音频、播放列表、字幕或允许的二进制媒体类型
-
-HLS 播放列表中的分片和密钥地址会按相同规则重写并再次校验。
-
-### 不写死海报
-
-首页和详情页海报来自所选元数据服务或数据源。豆瓣图片会经过代理、候选域名重试和缓存处理，但不会在代码中为某部影片写死固定海报。
-
-## 技术结构
+Cactus TV 部署在 Cloudflare，不能直接访问 `192.168.x.x`、`localhost` 或只在家庭局域网里开放的地址。Jellyfin 需要先有一个公网可访问的 HTTPS 地址，例如：
 
 ```text
-cactus-tv/
-├─ functions/                 Cloudflare Pages Functions
-│  ├─ api/                    前台与后台 API
-│  └─ _shared/                鉴权、数据库、元数据和数据源工具
-├─ migrations/
-│  └─ 0001_init.sql           D1 初始化脚本
-├─ public/                    静态前端文件
-├─ scripts/                   本地预检与部署烟雾测试
-├─ .dev.vars.example          本地环境变量示例
-├─ wrangler.toml.example      本地 Wrangler 配置示例
-├─ package.json
-└─ README.md
+https://jellyfin.example.com
+https://example.com/jellyfin
 ```
 
-## 部署教程
+推荐给 Cactus TV 单独创建一个普通用户，只开放需要观看的媒体库，不要使用管理员账号。
 
-### 一、准备账号
+连接步骤：
 
-需要：
+1. 确认这个 HTTPS 地址在外网可以正常打开 Jellyfin。
+2. 打开 Cactus TV，进入右上角“设置”。
+3. 在“Jellyfin / Emby”中点击“添加”。
+4. 类型选择 `Jellyfin`。
+5. 填写服务器地址、用户名和密码。
+6. 点击“连接并保存”，然后进入顶部“媒体库”。
 
-- GitHub 账号
-- Cloudflare 账号
+密码只用于向你的 Jellyfin 请求登录令牌，不会保存到浏览器；登录后保存的是访问令牌、用户 ID 和服务器地址。
 
-本教程使用：
+### 使用访问令牌
+
+账号密码登录最省事。需要使用令牌时，切换到“访问令牌”，填写：
+
+- Jellyfin API key 或用户访问令牌
+- 对应的用户 ID
+
+API key 可在 Jellyfin 管理后台的 API Keys 页面创建。由于 Cactus TV 需要读取某个用户的媒体库和观看进度，所以仅有 API key 还不够，还要填写用户 ID。
+
+## 连接 Emby
+
+Emby 同样需要公网 HTTPS 地址，例如：
 
 ```text
-GitHub 仓库
-→ Cloudflare Pages Git 集成
-→ Pages Functions
-→ D1 数据库
+https://emby.example.com
+https://example.com/emby
 ```
 
-不要只把 `public` 文件夹拖进 Cloudflare Pages。Cloudflare 控制台的静态文件拖拽上传不会部署本项目的 `functions` 目录，因此前台可能能打开，但搜索、后台和播放代理都无法工作。
+连接方法与 Jellyfin 相同：
 
-### 二、解压并检查目录
+1. 在 Emby 中创建一个用于观看的普通用户，并允许该用户远程访问。
+2. 在 Cactus TV 的“设置”中添加媒体库。
+3. 类型选择 `Emby`，填写地址和账号密码。
+4. 保存后进入“媒体库”。
 
-解压 ZIP 后，打开项目文件夹。正确的仓库根目录应直接包含：
+Emby 的 API 通常位于服务器地址下的 `/emby`。填写 `https://emby.example.com` 即可，Cactus TV 会自动处理；如果你的反向代理本身已经使用 `/emby` 路径，也可以直接填写完整地址。
 
-```text
-functions/
-migrations/
-public/
-scripts/
-package.json
-README.md
-```
+需要令牌登录时，可在 Emby Server Dashboard 的 `Advanced → Security` 中创建 API key，再和用户 ID 一起填写。
 
-不要形成下面这种双层目录：
+## 播放方式
 
-```text
-仓库根目录/
-└─ cactus-tv/
-   ├─ functions/
-   └─ public/
-```
+Cactus TV 会先读取媒体服务器返回的播放信息：
 
-出现双层目录时，把内层项目文件全部移动到仓库根目录。
+- 浏览器可以直接播放 MP4 / WebM 等格式时，优先使用原画直连。
+- 容器、视频编码、音频编码或字幕不兼容时，尝试由 Jellyfin / Emby 转为 HLS。
+- 原画失败时会继续尝试转码线路，切换时保留当前进度。
 
-### 三、上传到 GitHub
+是否发生转码取决于文件格式、浏览器能力和服务器设置。4K、高码率视频或烧录字幕可能明显增加媒体服务器负载。
 
-1. 在 GitHub 新建仓库，例如 `cactus-tv`。
-2. 私人使用建议选择 `Private`。
-3. 不需要让 GitHub 额外生成 README、License 或 `.gitignore`，项目已经包含这些文件。
-4. 打开空仓库，选择上传现有文件。
-5. 上传项目文件夹内部的全部内容。
-6. 提交后确认仓库首页能直接看到 `functions`、`migrations`、`public` 和 `package.json`。
+## 媒体服务器的网络要求
 
-### 四、创建 Cloudflare Pages 项目
+连接 Jellyfin / Emby 时，需要满足下面几项：
 
-在 Cloudflare Dashboard 中进入 `Workers & Pages`，创建 Pages 项目并连接刚才的 GitHub 仓库。界面名称可能随 Cloudflare 更新略有变化。
+- 地址必须是 `https://`
+- 域名必须能从公网访问
+- 证书必须受浏览器信任，不支持自签名证书
+- 反向代理需要完整转发 Jellyfin / Emby API、视频和字幕请求
+- 媒体服务器用户需要允许远程访问
 
-构建设置填写：
+Cactus TV 不要求新增 D1、KV、R2 或 Cloudflare 环境变量。媒体连接保存在当前浏览器；临时播放会话由 Pages Functions 处理。
+
+如果只想在家里使用，又不想把 Jellyfin / Emby 直接暴露到公网，建议在自己的反向代理或 VPN 网关上提供一个受保护的 HTTPS 入口。Cloudflare Pages 本身无法进入你的家庭局域网。
+
+## 部署
+
+### 只使用 Jellyfin / Emby
+
+这种用法不需要数据库。
+
+1. 把项目上传到 GitHub 仓库。
+2. 在 Cloudflare `Workers & Pages` 中创建 Pages 项目并连接仓库。
+3. 构建设置填写：
 
 ```text
 Framework preset: None
@@ -183,72 +111,43 @@ Build output directory: public
 Root directory: /
 ```
 
-说明：
+4. 完成部署后打开 Pages 地址，在站内“设置”里连接媒体服务器。
 
-- 项目没有前端构建步骤。
-- `exit 0` 明确告诉 Cloudflare 构建成功，同时保留 Pages Functions 支持。
-- 输出目录必须是 `public`。
-- `functions` 必须位于仓库根目录。
-
-保存并完成第一次部署。此时会得到类似下面的地址：
+仓库根目录必须直接包含：
 
 ```text
-https://你的项目.pages.dev
+functions/
+public/
+package.json
 ```
 
-第一次部署后首页可能可以打开，但在完成 D1 和环境变量配置前，后台功能尚未就绪。
+不要只上传 `public`，否则 Pages Functions 不会部署，媒体库、搜索和播放都无法工作。
 
-### 五、创建并初始化 D1
+### 使用兼容接口和管理后台
 
-在 Cloudflare Dashboard 中创建 D1 数据库，名称可填写：
+需要后台管理数据源时，再配置 D1：
 
-```text
-cactus-tv-db
-```
-
-创建完成后进入数据库的 SQL Console，打开项目中的：
-
-```text
-migrations/0001_init.sql
-```
-
-复制全部 SQL，粘贴到 Console 并执行。
-
-初始化成功后应存在四张表：
-
-```text
-settings
-providers
-provider_health
-subtitles
-```
-
-### 六、绑定 D1
-
-回到 Cactus TV 的 Pages 项目，进入项目设置中的 Bindings，添加 D1 database binding：
+1. 在 Cloudflare 创建 D1 数据库。
+2. 在 D1 SQL Console 执行 `migrations/0001_init.sql`。
+3. 给 Pages 项目添加 D1 Binding：
 
 ```text
 Variable name: DB
-D1 database: cactus-tv-db
 ```
 
-变量名必须是大写的 `DB`，不能改成其他名称。
-
-若 Cloudflare 分别显示 Production 和 Preview 环境，请至少为 Production 配置；需要预览分支正常工作时，也为 Preview 配置同样的绑定。
-
-### 七、设置环境变量
-
-进入 Pages 项目的 Variables and Secrets。
-
-#### 必填
+4. 添加 Secret：
 
 ```text
-ADMIN_TOKEN=至少16个字符的随机管理密钥
+ADMIN_TOKEN=至少16个字符的随机字符串
 ```
 
-建议使用较长、不可猜测的随机字符串，并作为 Secret 保存。该密钥用于进入 `/admin.html` 和调用后台 API。
+5. 重新部署后访问：
 
-#### 可选
+```text
+https://你的域名/admin.html
+```
+
+可选变量：
 
 ```text
 SITE_NAME=Cactus TV
@@ -257,231 +156,92 @@ DOUBAN_METADATA_URL=
 PROVIDERS_JSON=[]
 ```
 
-变量说明：
-
-| 变量 | 作用 |
-|---|---|
-| `SITE_NAME` | D1 尚未保存站点名时使用的默认名称 |
-| `TMDB_BEARER_TOKEN` | 启用 TMDB 元数据、海报和背景图 |
-| `DOUBAN_METADATA_URL` | 可选的自定义豆瓣兼容元数据接口 |
-| `PROVIDERS_JSON` | 高级用法：通过环境变量提供数据源配置 |
-
-通常不需要设置 `PROVIDERS_JSON`，直接在管理后台添加数据源更方便。
-
-添加或修改 Binding、变量、Secret 后，重新部署一次最新提交，确保生产部署加载新配置。
-
-### 八、进入管理后台
-
-打开：
-
-```text
-https://你的项目.pages.dev/admin.html
-```
-
-输入刚才设置的 `ADMIN_TOKEN`。
-
-管理密钥只保存在当前标签页的 `sessionStorage` 中。关闭标签页后需要重新输入，也可以在后台点击“清除管理密钥”。
-
-### 九、添加数据源
-
-后台目前支持 Apple CMS JSON 接口。
-
-示例接口格式：
-
-```text
-https://example.com/api.php/provide/vod/
-```
-
-填写：
-
-```text
-唯一 ID: source-1
-显示名称: 数据源名称
-接口地址: HTTPS Apple CMS JSON 地址
-优先级: 数字越大排序越靠前
-```
-
-媒体域名白名单只填写域名：
-
-```text
-cdn.example.com
-media.example.com
-```
-
-不要填写：
-
-```text
-https://cdn.example.com/path/
-```
-
-只有在源站存在浏览器 CORS、Referer 或跨域播放问题时，才需要启用播放代理。启用后，应把实际承载 m3u8、视频分片、密钥或字幕的域名加入白名单。
-
-### 十、部署检查
-
-访问：
-
-```text
-/api/health
-```
-
-正常情况下应看到：
-
-```json
-{
-  "ok": true,
-  "dbBound": true,
-  "dbReady": true,
-  "adminReady": true
-}
-```
-
-其中：
-
-- `dbBound` 表示 Pages 项目已经绑定 D1。
-- `dbReady` 表示 D1 已完成建表初始化。
-- `adminReady` 表示 `ADMIN_TOKEN` 已配置且长度合格。
-
-也可以在本地运行部署烟雾测试：
-
-```bash
-BASE_URL=https://你的项目.pages.dev \
-ADMIN_TOKEN=你的管理密钥 \
-npm run smoke
-```
-
-## 本地开发
+## 本地运行
 
 需要 Node.js 20 或更高版本。
-
-安装依赖并运行完整检查：
 
 ```bash
 npm ci
 npm run check
+npm run dev
 ```
 
-准备本地配置：
+需要本地调试 D1 时：
 
 ```bash
 cp wrangler.toml.example wrangler.toml
 cp .dev.vars.example .dev.vars
-```
-
-Windows PowerShell：
-
-```powershell
-Copy-Item wrangler.toml.example wrangler.toml
-Copy-Item .dev.vars.example .dev.vars
-```
-
-编辑 `.dev.vars`，把 `ADMIN_TOKEN` 改为至少 16 个字符。
-
-初始化本地 D1：
-
-```bash
 npm run db:local
-```
-
-启动本地开发服务器：
-
-```bash
 npm run dev
 ```
 
-Wrangler 会在终端显示本地访问地址。
+## 数据保存在哪里
 
-## 更新项目
+保存在浏览器本地：
 
-通过 GitHub 集成部署时，只需把新文件提交到原仓库，Cloudflare Pages 会自动生成新部署。
+- Jellyfin / Emby 地址、访问令牌和用户 ID
+- 收藏、历史和 Cactus TV 播放偏好
 
-更新时不要删除：
+同步回 Jellyfin / Emby：
 
-- Pages 项目的 D1 Binding
-- `ADMIN_TOKEN` 和其他环境变量
-- 已创建的 D1 数据库
-- D1 中现有的数据源和字幕配置
+- 播放开始
+- 播放进度
+- 暂停和停止状态
 
-仓库代码更新不会自动清空 D1。
+保存在 D1（启用管理后台时）：
 
-本项目的 JS 和 CSS 使用浏览器重新验证缓存，避免同名文件更新后仍长期加载旧版本；第三方版本化文件仍可使用长缓存。
+- 站点设置
+- 兼容接口配置
+- 接口状态
+- 在线字幕配置
+
+不要在公共电脑上保存媒体服务器连接。删除连接会清除 Cactus TV 当前浏览器中的服务器令牌，但不会删除媒体服务器中的账号或 API key。
 
 ## 常见问题
 
-### 首页能打开，但搜索和后台都报错
+### 提示只能连接公网 HTTPS
 
-通常是只部署了 `public`，没有部署 Pages Functions。请使用 Git 集成，确认 `functions` 位于仓库根目录。
+这是正常限制。Cloudflare Pages Functions 无法访问你家里的 `192.168.x.x:8096`。请先为媒体服务器配置公网域名和可信 HTTPS 证书。
 
-### `/api/health` 显示 `dbBound: false`
+### 能看到海报，但播放失败
 
-Pages 项目没有绑定 D1，或 Binding 名称不是 `DB`。
+先在 Jellyfin / Emby 官方网页中播放同一文件，然后检查：
 
-### `dbBound: true`，但 `dbReady: false`
+- 用户是否允许远程播放
+- 反向代理是否限制大文件、Range 请求或长连接
+- 服务器是否允许转码
+- FFmpeg 是否工作正常
+- 磁盘是否有转码临时空间
+- 外网上行带宽是否足够
 
-D1 已绑定，但没有执行 `migrations/0001_init.sql`，或绑定了错误的数据库。
+### 一播放就开始转码
 
-### 后台提示管理密钥无效
+通常是浏览器不支持文件的容器、视频编码、音频编码或字幕格式。H.264 + AAC 的 MP4 最容易直放；其他格式可能需要服务器转码。
 
-检查生产环境的 `ADMIN_TOKEN` 是否和输入内容完全一致。修改 Secret 后需要重新部署。
+### 观看进度没有回到服务器
 
-### 搜索没有结果
+确认使用的是普通用户登录令牌，而不是权限不足的 API key；同时检查该用户能否在 Jellyfin / Emby 官方客户端中正常记录进度。
 
-检查：
+### 登录一段时间后失效
 
-- 是否已添加并启用数据源
-- 接口是否兼容 Apple CMS JSON
-- 接口地址是否使用 HTTPS
-- 后台测速是否正常
-- 数据源是否限制请求头、地区或访问频率
-
-### 能搜索但不能播放
-
-优先检查浏览器控制台和播放错误提示。常见原因：
-
-- 媒体地址已经失效
-- 目标站禁止跨域播放
-- 媒体域名没有加入白名单
-- 数据源需要 Referer 或 Origin 请求头
-- m3u8 内部引用了其他未加入白名单的域名
-- 上游使用 HTTP，浏览器或代理要求 HTTPS
-
-### 海报偶尔显示占位图
-
-海报来自元数据服务或数据源，上游图片失效、限流或临时不可达时会触发重试和占位图。项目不会把某部影片的海报固定写进代码，因此上游海报变化后仍会按新地址获取。
+媒体服务器可能撤销了令牌，或者临时 Pages 会话已过期。打开“设置”，点击对应服务器的“测试”；仍然失败时重新填写账号密码连接。
 
 ## 安全建议
 
-- 使用至少 16 个字符的随机 `ADMIN_TOKEN`
-- 不要把 `.dev.vars`、真实 `wrangler.toml` 或管理密钥提交到 GitHub
-- GitHub 仓库建议设为 Private
-- 只配置可信、合法的数据接口
-- 播放代理白名单只加入必要的媒体域名
-- 不要把 Cactus TV 当作通用公开代理
-- 定期检查数据源和字幕地址
+- 为 Cactus TV 创建单独的普通用户
+- 只授予需要的媒体库权限
+- 不要给该用户媒体删除和服务器管理权限
+- 使用可信 HTTPS 证书
+- 定期撤销不再使用的令牌或 API key
+- 不要把真实令牌、密码、`.dev.vars` 提交到仓库
+- 私人部署建议使用私有 GitHub 仓库，并给 Cactus TV 本身增加访问控制
 
-## 声明
+## 说明
 
-Cactus TV 仅提供网页播放器、影视信息展示、接口管理和个人观看记录功能。
+Cactus TV 只提供媒体展示、搜索和播放界面，不包含媒体文件、可用片源、Jellyfin / Emby 账号，也不绕过 DRM、付费或访问控制。
 
-本项目：
+请只连接自己管理或获准使用的媒体库和接口。第三方名称及商标归各自权利人所有；Cactus TV 与 Jellyfin、Emby、Cloudflare、TMDB、豆瓣不存在隶属或授权关系。
 
-- 不提供、内置、维护、销售或推荐任何影视片源、解析接口或账号
-- 不托管、不存储、不上传、不转码、不分发任何影视内容
-- 不对第三方接口返回内容的合法性、版权状态、可用性、安全性或准确性作出保证
-- 不提供绕过 DRM、付费限制、访问控制或版权保护的功能
+## License
 
-部署者和使用者应仅接入自己有权使用或已获得合法授权的数据源，并自行遵守所在地区的法律法规、内容许可和第三方服务条款。因自行配置第三方接口或播放第三方内容产生的责任，由相应接口提供者、部署者和使用者承担。
-
-Cactus TV 与 Cloudflare、TMDB、豆瓣及任何影视平台不存在隶属、授权或合作关系。第三方名称和商标归其各自权利人所有。
-
-## 许可与第三方组件
-
-项目许可见 [LICENSE](./LICENSE)。
-
-第三方组件和许可见 [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md)。
-
-## 参考文档
-
-- [Cloudflare Pages Git integration](https://developers.cloudflare.com/pages/get-started/git-integration/)
-- [Cloudflare Pages Functions](https://developers.cloudflare.com/pages/functions/)
-- [Pages Functions D1 bindings](https://developers.cloudflare.com/pages/functions/bindings/)
-- [Cloudflare Pages custom headers](https://developers.cloudflare.com/pages/configuration/headers/)
+项目许可见 [LICENSE](./LICENSE)，第三方组件见 [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md)。
