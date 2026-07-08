@@ -1,4 +1,4 @@
-const CLEANUP_CACHE_PREFIXES = ['cactus-v6', 'cactus-v5', 'cactus-v4', 'cactus-v3', 'cactus-v2', 'cactus-v1'];
+const CLEANUP_CACHE_PREFIXES = ['cactus-v3', 'cactus-v2', 'cactus-v1'];
 
 self.addEventListener('install', event => {
   event.waitUntil(self.skipWaiting());

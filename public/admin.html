@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#080808" />
   <title>Cactus TV 管理后台</title>
   <link rel="icon" href="/assets/cactus.svg" />
-  <link rel="stylesheet" href="/admin.css?v=0.6.0" />
+  <link rel="stylesheet" href="/admin.css?v=0.3.0" />
 </head>
 <body>
   <div class="ambient ambient-a"></div>
@@ -28,7 +28,6 @@
 
     <nav class="admin-tabs">
       <button class="admin-tab active" data-panel="providers">数据源</button>
-      <button class="admin-tab" data-panel="media">Emby / Jellyfin</button>
       <button class="admin-tab" data-panel="settings">站点设置</button>
       <button class="admin-tab" data-panel="subtitles">字幕</button>
     </nav>
@@ -63,64 +62,6 @@
             <button id="testAll" class="secondary-button">全部测速</button>
           </div>
           <div id="providerList" class="admin-list"></div>
-        </div>
-      </div>
-    </section>
-
-    <section id="panel-media" class="admin-panel">
-      <div class="admin-grid">
-        <div class="admin-card">
-          <div class="section-heading"><h2>连接媒体服务器</h2><button id="mediaReset" class="secondary-button" type="button">新建</button></div>
-          <form id="mediaForm" class="admin-form">
-            <input id="mediaConnectionId" type="hidden" />
-            <div class="form-row">
-              <label>类型<select id="mediaKind"><option value="jellyfin">Jellyfin</option><option value="emby">Emby</option></select></label>
-              <label>显示名称<input id="mediaName" maxlength="80" placeholder="客厅媒体库 / 小明" /></label>
-            </div>
-            <label>服务器地址<input id="mediaServerUrl" type="url" required placeholder="https://jellyfin.example.com" /></label>
-            <div class="media-auth-tabs" role="tablist">
-              <button class="media-auth-tab active" data-media-auth="password" type="button">账号密码</button>
-              <button class="media-auth-tab" data-media-auth="token" type="button">访问令牌</button>
-            </div>
-            <div id="mediaPasswordFields" class="form-row">
-              <label>用户名<input id="mediaUsername" autocomplete="username" /></label>
-              <label>密码<input id="mediaPassword" type="password" autocomplete="current-password" /></label>
-            </div>
-            <div id="mediaTokenFields" class="form-row hidden">
-              <label>访问令牌<input id="mediaToken" type="password" autocomplete="off" /></label>
-              <label>用户 ID<input id="mediaUserId" autocomplete="off" /></label>
-            </div>
-            <label class="check-row"><input id="mediaEnabled" type="checkbox" checked />在前台启用这个用户配置</label>
-            <p class="muted">密码只用于登录并换取令牌，不会保存。服务器必须是 Cloudflare 能访问的公网 HTTPS 地址。</p>
-            <div class="form-row">
-              <button id="mediaConnectButton" class="primary-button" type="submit">连接并保存</button>
-              <button id="mediaCancel" class="secondary-button" type="button">取消编辑</button>
-            </div>
-          </form>
-
-          <details class="connection-guide">
-            <summary>连接教程</summary>
-            <div class="guide-body">
-              <h3>Jellyfin</h3>
-              <ol>
-                <li>先给 Jellyfin 配置外网可访问的 HTTPS 域名，例如 <code>https://jellyfin.example.com</code>。</li>
-                <li>在 Jellyfin 后台创建普通用户，并只开放需要观看的媒体库。</li>
-                <li>类型选择 Jellyfin，填写服务器地址、用户名和密码，点击“连接并保存”。</li>
-              </ol>
-              <h3>Emby</h3>
-              <ol>
-                <li>确认 Emby 的远程 HTTPS 地址能在外网打开。</li>
-                <li>创建普通 Emby 用户并允许远程访问。</li>
-                <li>类型选择 Emby，填写服务器地址和账号。普通域名无需手动补 <code>/emby</code>。</li>
-              </ol>
-              <p>同一服务器可以保存多个用户。前台“设置 → 当前媒体用户”可随时切换，也可以选择聚合全部已启用配置。</p>
-            </div>
-          </details>
-        </div>
-
-        <div class="admin-card">
-          <div class="section-heading"><div><h2>媒体用户</h2><p class="muted">配置保存在当前浏览器，不会写入 GitHub 或 D1。</p></div></div>
-          <div id="mediaList" class="admin-list"></div>
         </div>
       </div>
     </section>
@@ -176,6 +117,6 @@
   </dialog>
 
   <div id="toast" class="toast hidden"></div>
-  <script type="module" src="/js/admin.js?v=0.6.0"></script>
+  <script type="module" src="/js/admin.js?v=0.3.0"></script>
 </body>
 </html>
