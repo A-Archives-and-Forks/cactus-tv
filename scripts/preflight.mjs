@@ -5,8 +5,8 @@ const required = [
   'public/index.html', 'public/admin.html', 'public/styles.css', 'public/_headers', 'public/_redirects',
   'public/js/app.js', 'public/js/app-legacy.js', 'public/js/admin.js', 'public/js/api.js', 'public/js/player.js', 'public/js/player-ui.js',
   'public/vendor/hls.min.js', 'public/vendor/dash.all.min.js', 'functions/_middleware.ts', 'functions/_shared/auth.ts',
-  'functions/api/health.ts', 'functions/api/subtitle.ts', 'functions/api/admin/providers.ts',
-  'migrations/0001_init.sql', 'DEPLOY.md', 'LICENSE', 'THIRD_PARTY_NOTICES.md',
+  'functions/api/health.ts', 'functions/api/subtitle.ts', 'functions/api/library.ts', 'functions/api/admin/providers.ts',
+  'migrations/0001_init.sql', 'migrations/0002_library.sql', 'DEPLOY.md', 'LICENSE', 'THIRD_PARTY_NOTICES.md',
 ];
 
 const failures = [];
@@ -17,7 +17,7 @@ for (const file of required) {
 
 for (const forbidden of [
   'functions/api/auth/login.ts', 'functions/api/auth/logout.ts', 'functions/api/me.ts',
-  'functions/api/library.ts', 'functions/api/admin/users.ts',
+  'functions/api/admin/users.ts',
 ]) {
   try { await access(forbidden, constants.F_OK); failures.push(`不应包含账户接口：${forbidden}`); }
   catch {}
@@ -38,10 +38,10 @@ try {
 
 try {
   const sql = await readFile('migrations/0001_init.sql', 'utf8');
-  for (const table of ['settings', 'providers', 'provider_health', 'subtitles']) {
+  for (const table of ['settings', 'providers', 'provider_health', 'subtitles', 'favorites', 'watch_history']) {
     if (!new RegExp(`CREATE TABLE IF NOT EXISTS ${table}\\b`, 'i').test(sql)) failures.push(`数据库迁移缺少表：${table}`);
   }
-  for (const table of ['users', 'sessions', 'login_attempts', 'favorites', 'history']) {
+  for (const table of ['users', 'sessions', 'login_attempts']) {
     if (new RegExp(`CREATE TABLE IF NOT EXISTS ${table}\\b`, 'i').test(sql)) failures.push(`数据库不应创建账户表：${table}`);
   }
 } catch {}
