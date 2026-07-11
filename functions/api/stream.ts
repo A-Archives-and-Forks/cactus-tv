@@ -1,5 +1,6 @@
 import { HttpError, ok } from '../_shared/http';
 import { fetchWithTimeout, findProvider, validateHttpsUrl } from '../_shared/providers';
+import { verifyMediaTicket, type MediaTicket } from '../_shared/media-ticket';
 import {
   matchStreamflowObject,
   normalizeStreamflowGeneration,
@@ -20,18 +21,33 @@ function allowedHost(provider: Provider, hostname: string): boolean {
   return allowed.has(hostname.toLowerCase());
 }
 
-function assertMediaUrl(provider: Provider, raw: string): URL {
+function assertMediaUrl(provider: Provider, raw: string, allowUnlisted = false): URL {
   const value = validateHttpsUrl(raw);
   const url = new URL(value);
-  if (!allowedHost(provider, url.hostname)) throw new HttpError(403, `媒体主机 ${url.hostname} 不在该数据源白名单中`, 'MEDIA_HOST_BLOCKED');
+  if (!allowUnlisted && !allowedHost(provider, url.hostname)) {
+    throw new HttpError(403, `媒体主机 ${url.hostname} 不在该数据源白名单中`, 'MEDIA_HOST_BLOCKED');
+  }
   return url;
 }
 
-function proxied(provider: Provider, absolute: string, streamflowId = '', generation = 1, trackId = '', objectId = ''): string {
+
+function proxied(
+  provider: Provider,
+  absolute: string,
+  streamflowId = '',
+  generation = 1,
+  trackId = '',
+  objectId = '',
+  mediaTicket: MediaTicket | null = null,
+): string {
   const params = new URLSearchParams({ provider: provider.id, url: absolute });
   if (validStreamflowId(streamflowId)) {
     params.set('sf', streamflowId);
     params.set('sfg', String(normalizeStreamflowGeneration(generation)));
+  }
+  if (mediaTicket) {
+    params.set('mt', mediaTicket.token);
+    params.set('mte', String(mediaTicket.expires));
   }
   if (trackId) params.set('sft', trackId);
   if (objectId && validObjectId(objectId)) params.set('sfi', objectId);
@@ -67,7 +83,15 @@ function rewriteUriAttribute(line: string, rewrite: (uri: string) => string): st
   return line.replace(/URI="([^"]+)"/g, (_all, uri) => `URI="${rewrite(uri)}"`);
 }
 
-function rewriteM3u8(text: string, base: URL, provider: Provider, streamflowId = '', generation = 1, inheritedTrack = 'main'): string {
+function rewriteM3u8(
+  text: string,
+  base: URL,
+  provider: Provider,
+  streamflowId = '',
+  generation = 1,
+  inheritedTrack = 'main',
+  mediaTicket: MediaTicket | null = null,
+): string {
   const lines = text.split(/\r?\n/);
   const isMaster = lines.some(line => line.trim().startsWith('#EXT-X-STREAM-INF:'));
   const output: string[] = [];
@@ -114,12 +138,12 @@ function rewriteM3u8(text: string, base: URL, provider: Provider, streamflowId =
         const absolute = new URL(trimmed, base).toString();
         if (isMaster) {
           const track = pendingVariant ? `v${variantIndex++}` : `m${otherPlaylistIndex++}`;
-          output.push(proxied(provider, absolute, streamflowId, generation, track));
+          output.push(proxied(provider, absolute, streamflowId, generation, track, '', mediaTicket));
           pendingVariant = false;
         } else {
           const range = materializeRange(absolute, pendingRange);
           const objectId = `${inheritedTrack}--seg-${mediaSequence + segmentIndex}${rangeSuffix(range)}`;
-          output.push(proxied(provider, absolute, streamflowId, generation, inheritedTrack, objectId));
+          output.push(proxied(provider, absolute, streamflowId, generation, inheritedTrack, objectId, mediaTicket));
           segmentIndex += 1;
           pendingRange = null;
         }
@@ -133,7 +157,7 @@ function rewriteM3u8(text: string, base: URL, provider: Provider, streamflowId =
       if (!attrs.URI) { output.push(rawLine); continue; }
       const track = type === 'AUDIO' ? `a${audioIndex++}` : `m${otherPlaylistIndex++}`;
       output.push(rewriteUriAttribute(rawLine, uri => {
-        try { return proxied(provider, new URL(uri, base).toString(), streamflowId, generation, track); }
+        try { return proxied(provider, new URL(uri, base).toString(), streamflowId, generation, track, '', mediaTicket); }
         catch { return uri; }
       }));
       continue;
@@ -146,7 +170,7 @@ function rewriteM3u8(text: string, base: URL, provider: Provider, streamflowId =
           const absolute = new URL(uri, base).toString();
           const range = materializeRange(absolute, parseByteRange(attrs.BYTERANGE || ''));
           const objectId = `${inheritedTrack}--map-${mapIndex++}${rangeSuffix(range)}`;
-          return proxied(provider, absolute, streamflowId, generation, inheritedTrack, objectId);
+          return proxied(provider, absolute, streamflowId, generation, inheritedTrack, objectId, mediaTicket);
         } catch { return uri; }
       }));
       continue;
@@ -159,7 +183,7 @@ function rewriteM3u8(text: string, base: URL, provider: Provider, streamflowId =
       } else {
         const objectId = `${inheritedTrack}--key-${keyIndex++}`;
         output.push(rewriteUriAttribute(rawLine, uri => {
-          try { return proxied(provider, new URL(uri, base).toString(), streamflowId, generation, inheritedTrack, objectId); }
+          try { return proxied(provider, new URL(uri, base).toString(), streamflowId, generation, inheritedTrack, objectId, mediaTicket); }
           catch { return uri; }
         }));
       }
@@ -167,7 +191,7 @@ function rewriteM3u8(text: string, base: URL, provider: Provider, streamflowId =
     }
 
     output.push(rawLine.replace(/URI="([^"]+)"/g, (_all, uri) => {
-      try { return `URI="${proxied(provider, new URL(uri, base).toString(), streamflowId, generation, inheritedTrack)}"`; }
+      try { return `URI="${proxied(provider, new URL(uri, base).toString(), streamflowId, generation, inheritedTrack, '', mediaTicket)}"`; }
       catch { return `URI="${uri}"`; }
     }));
   }
@@ -183,11 +207,11 @@ function normalizeMpdBase(text: string, manifestUrl: URL): string {
   return text.replace(/<MPD\b[^>]*>/i, match => `${match}<BaseURL>${escapeXml(directory)}</BaseURL>`);
 }
 
-async function fetchRedirectSafe(provider: Provider, url: URL, request: Request): Promise<Response> {
+async function fetchRedirectSafe(provider: Provider, url: URL, request: Request, allowUnlisted = false): Promise<Response> {
   let current = url;
   for (let i = 0; i < 4; i += 1) {
-    assertMediaUrl(provider, current.toString());
-    const headers = new Headers({ Accept: '*/*', 'User-Agent': 'CactusTV/0.8.2', ...provider.requestHeaders });
+    assertMediaUrl(provider, current.toString(), allowUnlisted);
+    const headers = new Headers({ Accept: '*/*', 'User-Agent': 'CactusTV/0.8.4', ...provider.requestHeaders });
     const range = request.headers.get('range');
     if (range) headers.set('range', range);
     const response = await fetchWithTimeout(current.toString(), { headers, redirect: 'manual' }, 15_000);
@@ -195,7 +219,7 @@ async function fetchRedirectSafe(provider: Provider, url: URL, request: Request)
     const location = response.headers.get('location');
     if (!location) return response;
     current = new URL(location, current);
-    assertMediaUrl(provider, current.toString());
+    assertMediaUrl(provider, current.toString(), allowUnlisted);
   }
   throw new HttpError(502, '媒体地址重定向次数过多', 'TOO_MANY_REDIRECTS');
 }
@@ -292,6 +316,14 @@ export const onRequestGet: PagesFunction<Env, any, AppData> = async ({ request, 
   const provider = await findProvider(env, params.get('provider') || '');
   if (!provider || !provider.enabled || !provider.proxyEnabled) throw new HttpError(404, '该数据源未启用受控代理', 'PROXY_DISABLED');
 
+  const ticketExpires = Math.floor(Number(params.get('mte') || 0));
+  const ticketToken = params.get('mt') || '';
+  const ticketAuthorized = await verifyMediaTicket(env, provider.id, ticketExpires, ticketToken);
+  const mediaTicket: MediaTicket | null = ticketAuthorized
+    ? { token: ticketToken, expires: ticketExpires }
+    : null;
+
+  const target = assertMediaUrl(provider, params.get('url') || '', ticketAuthorized);
   const streamflowId = params.get('sf') || '';
   const generation = normalizeStreamflowGeneration(params.get('sfg'));
   const objectId = params.get('sfi') || '';
@@ -300,8 +332,7 @@ export const onRequestGet: PagesFunction<Env, any, AppData> = async ({ request, 
     if (hit) return hit;
   }
 
-  const target = assertMediaUrl(provider, params.get('url') || '');
-  const upstream = await fetchRedirectSafe(provider, target, request);
+  const upstream = await fetchRedirectSafe(provider, target, request, ticketAuthorized);
   if (!upstream.ok && upstream.status !== 206) throw new HttpError(502, `媒体上游返回 HTTP ${upstream.status}`, 'MEDIA_UPSTREAM_ERROR');
 
   const finalUrl = upstream.url ? new URL(upstream.url) : target;
@@ -343,7 +374,7 @@ export const onRequestGet: PagesFunction<Env, any, AppData> = async ({ request, 
         trackId,
       }).catch(() => {}));
     }
-    return new Response(rewriteM3u8(text, finalUrl, provider, streamflowId, generation, trackId), {
+    return new Response(rewriteM3u8(text, finalUrl, provider, streamflowId, generation, trackId, mediaTicket), {
       headers: {
         'content-type': 'application/vnd.apple.mpegurl; charset=utf-8',
         'cache-control': 'private, max-age=10, stale-while-revalidate=20',

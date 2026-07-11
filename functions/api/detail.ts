@@ -1,20 +1,63 @@
 import { HttpError, ok } from '../_shared/http';
 import { getSetting } from '../_shared/db';
 import { bestTmdbMatch, doubanSearch, resolveMetadataSource, searchTmdb, tmdbDetail } from '../_shared/metadata';
-import { buildCmsUrl, fetchJson, findProvider } from '../_shared/providers';
+import { buildCmsUrl, fetchJson, findProvider, validateHttpsUrl } from '../_shared/providers';
+import { issueMediaTicket, type MediaTicket } from '../_shared/media-ticket';
 import type { AppData, Env, Provider } from '../_shared/types';
 
-function proxyUrl(provider: Provider, target: string): string {
-  if (!provider.proxyEnabled) return target;
+function proxyInfo(provider: Provider, target: string, ticket: MediaTicket | null) {
+  let normalized = target;
+  let mediaHost = '';
   try {
-    const host = new URL(target).hostname.toLowerCase();
-    const allowed = new Set([new URL(provider.baseUrl).hostname.toLowerCase(), ...provider.mediaHosts]);
-    if (!allowed.has(host)) return target;
-    return `/api/stream?provider=${encodeURIComponent(provider.id)}&url=${encodeURIComponent(target)}`;
-  } catch { return target; }
+    normalized = validateHttpsUrl(target);
+    mediaHost = new URL(normalized).hostname.toLowerCase();
+  } catch {
+    return {
+      playbackUrl: target,
+      proxied: false,
+      proxyMode: 'direct',
+      proxyReason: '片源地址不是可代理的 HTTPS 地址',
+      mediaHost,
+    };
+  }
+
+  if (!provider.proxyEnabled) {
+    return {
+      playbackUrl: normalized,
+      proxied: false,
+      proxyMode: 'direct',
+      proxyReason: '当前数据源未开启播放代理',
+      mediaHost,
+    };
+  }
+
+  const allowed = new Set([new URL(provider.baseUrl).hostname.toLowerCase(), ...provider.mediaHosts]);
+  const allowlisted = allowed.has(mediaHost);
+  if (!allowlisted && !ticket) {
+    return {
+      playbackUrl: normalized,
+      proxied: false,
+      proxyMode: 'direct',
+      proxyReason: `媒体域名 ${mediaHost} 未加入白名单，且站点未生成临时媒体凭证`,
+      mediaHost,
+    };
+  }
+
+  const params = new URLSearchParams({ provider: provider.id, url: normalized });
+  if (ticket) {
+    params.set('mt', ticket.token);
+    params.set('mte', String(ticket.expires));
+  }
+  return {
+    playbackUrl: `/api/stream?${params.toString()}`,
+    proxied: true,
+    proxyMode: allowlisted ? 'allowlist' : 'ticket',
+    proxyReason: '',
+    mediaHost,
+  };
 }
 
-function parseLines(fromRaw: string, urlRaw: string, provider: Provider) {
+function parseLines(fromRaw: string, urlRaw: string, provider: Provider, ticket: MediaTicket | null) {
   const names = fromRaw.split('$$$');
   return urlRaw.split('$$$').map((group, index) => ({
     name: names[index] || `线路 ${index + 1}`,
@@ -23,7 +66,12 @@ function parseLines(fromRaw: string, urlRaw: string, provider: Provider) {
       if (splitAt < 0) return null;
       const url = entry.slice(splitAt + 1).trim();
       if (!/^https?:\/\//i.test(url)) return null;
-      return { name: entry.slice(0, splitAt).trim() || '播放', url, playbackUrl: proxyUrl(provider, url), proxied: proxyUrl(provider, url) !== url };
+      const proxy = proxyInfo(provider, url, ticket);
+      return {
+        name: entry.slice(0, splitAt).trim() || '播放',
+        url,
+        ...proxy,
+      };
     }).filter(Boolean),
   })).filter(line => line.episodes.length > 0);
 }
@@ -55,6 +103,7 @@ export const onRequestGet: PagesFunction<Env, any, AppData> = async ({ request, 
   }
 
   const itemKey = `${provider.id}:${String(item.vod_id ?? id)}`;
+  const mediaTicket = provider.proxyEnabled ? await issueMediaTicket(env, provider.id) : null;
   let subtitles: any[] = [];
   if (env.DB) {
     try {
@@ -69,7 +118,7 @@ export const onRequestGet: PagesFunction<Env, any, AppData> = async ({ request, 
     name, pic: tmdb?.poster || douban?.poster || String(item.vod_pic ?? ''), backdrop: tmdb?.backdrop || '', remarks: String(item.vod_remarks ?? ''),
     year: year || tmdb?.year || douban?.year || '', type: String(item.type_name ?? item.vod_class ?? ''), area: String(item.vod_area ?? ''),
     lang: String(item.vod_lang ?? ''), content: tmdb?.overview || String(item.vod_content ?? item.vod_blurb ?? '').replace(/<[^>]+>/g, '').slice(0, 3000),
-    director: String(item.vod_director ?? ''), actors: String(item.vod_actor ?? ''), lines: parseLines(String(item.vod_play_from ?? ''), String(item.vod_play_url ?? ''), provider),
+    director: String(item.vod_director ?? ''), actors: String(item.vod_actor ?? ''), lines: parseLines(String(item.vod_play_from ?? ''), String(item.vod_play_url ?? ''), provider, mediaTicket),
     tmdb, douban, metadataSource: source, subtitles, proxyEnabled: provider.proxyEnabled,
   }}, 200, { 'cache-control': 'private, max-age=60' });
 };
