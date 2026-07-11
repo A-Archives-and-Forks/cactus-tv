@@ -6,7 +6,9 @@ const required = [
   'public/js/app.js', 'public/js/app-legacy.js', 'public/js/admin.js', 'public/js/api.js', 'public/js/player.js', 'public/js/player-ui.js',
   'public/vendor/hls.min.js', 'public/vendor/dash.all.min.js', 'functions/_middleware.ts', 'functions/_shared/auth.ts',
   'functions/api/health.ts', 'functions/api/subtitle.ts', 'functions/api/library.ts', 'functions/api/admin/providers.ts',
-  'migrations/0001_init.sql', 'migrations/0002_library.sql', 'DEPLOY.md', 'LICENSE', 'THIRD_PARTY_NOTICES.md',
+  'functions/api/cache/heartbeat.ts', 'functions/api/cache/status.ts', 'functions/api/cache/clear.ts',
+  'functions/_shared/streamflow.ts', 'streamflow-worker/src/index.ts', 'streamflow-worker/wrangler.toml.example',
+  'migrations/0001_init.sql', 'migrations/0002_library.sql', 'migrations/0003_streamflow.sql', 'CACTUS_STREAMFLOW.md', 'DEPLOY.md', 'LICENSE', 'THIRD_PARTY_NOTICES.md',
 ];
 
 const failures = [];
@@ -43,6 +45,21 @@ try {
   }
   for (const table of ['users', 'sessions', 'login_attempts']) {
     if (new RegExp(`CREATE TABLE IF NOT EXISTS ${table}\\b`, 'i').test(sql)) failures.push(`数据库不应创建账户表：${table}`);
+  }
+} catch {}
+
+
+try {
+  const streamflowSql = await readFile('migrations/0003_streamflow.sql', 'utf8');
+  for (const table of ['streamflow_sessions', 'streamflow_objects', 'streamflow_hints']) {
+    if (!new RegExp(`CREATE TABLE IF NOT EXISTS ${table}\\b`, 'i').test(streamflowSql)) failures.push(`CactusStreamflow 迁移缺少表：${table}`);
+  }
+} catch {}
+
+try {
+  const wrangler = await readFile('wrangler.toml.example', 'utf8');
+  for (const binding of ['STREAMFLOW_R2', 'STREAMFLOW_QUEUE']) {
+    if (!wrangler.includes(`binding = "${binding}"`)) failures.push(`Pages Wrangler 缺少 Binding：${binding}`);
   }
 } catch {}
 
