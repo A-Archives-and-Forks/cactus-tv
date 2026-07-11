@@ -7,8 +7,8 @@ const required = [
   'public/vendor/hls.min.js', 'public/vendor/dash.all.min.js', 'functions/_middleware.ts', 'functions/_shared/auth.ts',
   'functions/api/health.ts', 'functions/api/subtitle.ts', 'functions/api/library.ts', 'functions/api/admin/providers.ts',
   'functions/api/cache/heartbeat.ts', 'functions/api/cache/status.ts', 'functions/api/cache/clear.ts',
-  'functions/_shared/streamflow.ts', 'streamflow-worker/src/index.ts', 'streamflow-worker/wrangler.toml.example',
-  'migrations/0001_init.sql', 'migrations/0002_library.sql', 'migrations/0003_streamflow.sql', 'CACTUS_STREAMFLOW.md', 'DEPLOY.md', 'LICENSE', 'THIRD_PARTY_NOTICES.md',
+  'functions/_shared/streamflow.ts', 'migrations/0001_init.sql', 'migrations/0002_library.sql',
+  'CACTUS_STREAMFLOW.md', 'DEPLOY.md', 'LICENSE', 'THIRD_PARTY_NOTICES.md',
 ];
 
 const failures = [];
@@ -19,9 +19,9 @@ for (const file of required) {
 
 for (const forbidden of [
   'functions/api/auth/login.ts', 'functions/api/auth/logout.ts', 'functions/api/me.ts',
-  'functions/api/admin/users.ts',
+  'functions/api/admin/users.ts', 'streamflow-worker', 'migrations/0003_streamflow.sql',
 ]) {
-  try { await access(forbidden, constants.F_OK); failures.push(`不应包含账户接口：${forbidden}`); }
+  try { await access(forbidden, constants.F_OK); failures.push(`不应包含旧版文件：${forbidden}`); }
   catch {}
 }
 
@@ -36,6 +36,7 @@ try {
   const html = await readFile('public/index.html', 'utf8');
   for (const ref of ['/styles.css', '/js/app.js']) if (!html.includes(ref)) failures.push(`首页缺少资源引用：${ref}`);
   if (/登录 Cactus TV|loginForm|authDialog/.test(html)) failures.push('首页仍包含登录界面');
+  if (/R2 缓存|Queue/.test(html)) failures.push('首页仍包含旧版 R2/Queue 文案');
 } catch {}
 
 try {
@@ -48,18 +49,21 @@ try {
   }
 } catch {}
 
-
 try {
-  const streamflowSql = await readFile('migrations/0003_streamflow.sql', 'utf8');
-  for (const table of ['streamflow_sessions', 'streamflow_objects', 'streamflow_hints']) {
-    if (!new RegExp(`CREATE TABLE IF NOT EXISTS ${table}\\b`, 'i').test(streamflowSql)) failures.push(`CactusStreamflow 迁移缺少表：${table}`);
+  const wrangler = await readFile('wrangler.toml.example', 'utf8');
+  if (!wrangler.includes('binding = "DB"')) failures.push('Pages Wrangler 缺少 DB Binding');
+  for (const removed of ['STREAMFLOW_R2', 'STREAMFLOW_QUEUE']) {
+    if (wrangler.includes(`binding = "${removed}"`)) failures.push(`Pages Wrangler 仍包含旧版 Binding：${removed}`);
   }
 } catch {}
 
 try {
-  const wrangler = await readFile('wrangler.toml.example', 'utf8');
-  for (const binding of ['STREAMFLOW_R2', 'STREAMFLOW_QUEUE']) {
-    if (!wrangler.includes(`binding = "${binding}"`)) failures.push(`Pages Wrangler 缺少 Binding：${binding}`);
+  const streamflow = await readFile('functions/_shared/streamflow.ts', 'utf8');
+  for (const token of ['caches.default', 'prefetchStreamflow', 'bumpStreamflowGeneration']) {
+    if (!streamflow.includes(token)) failures.push(`CactusStreamflow Cache API 实现缺少：${token}`);
+  }
+  for (const removed of ['STREAMFLOW_R2', 'STREAMFLOW_QUEUE', 'R2Bucket']) {
+    if (streamflow.includes(removed)) failures.push(`CactusStreamflow 仍包含旧版依赖：${removed}`);
   }
 } catch {}
 
