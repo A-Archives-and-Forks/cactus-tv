@@ -1,6 +1,6 @@
 {
   "name": "cactus-tv",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "private": true,
   "description": "Cactus Performance Core with personalized recommendations, progressive home rendering, mature gestures, deep buffering, and optional clean-stream filtering.",
   "scripts": {
