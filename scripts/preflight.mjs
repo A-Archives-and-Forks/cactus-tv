@@ -34,7 +34,7 @@ try {
 
 try {
   const html = await readFile('public/index.html', 'utf8');
-  for (const ref of ['/styles.css?v=1.2.2', '/js/app.js?v=1.2.2']) {
+  for (const ref of ['/styles.css?v=1.2.3', '/js/app.js?v=1.2.3']) {
     if (!html.includes(ref)) failures.push(`首页缺少或未升级资源引用：${ref}`);
   }
   if (/登录 Cactus TV|loginForm|authDialog/.test(html)) failures.push('首页仍包含登录界面');
@@ -45,7 +45,7 @@ try {
 
 try {
   const app = await readFile('public/js/app.js', 'utf8');
-  for (const token of ['applyCleanStream', "import('./player.js?v=1.2.2')", "import('./player-ui.js?v=1.2.2')", 'buildPersonalizedHome']) {
+  for (const token of ['applyCleanStream', "import('./player.js?v=1.2.3')", "import('./player-ui.js?v=1.2.3')", 'buildPersonalizedHome']) {
     if (!app.includes(token)) failures.push(`前端主程序缺少：${token}`);
   }
   if (/sendStreamflowHeartbeat|prepareStreamflow|streamflowEnabled/.test(app)) failures.push('前端仍包含主动 Streamflow 逻辑');
