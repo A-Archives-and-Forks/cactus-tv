@@ -1,8 +1,8 @@
 {
   "name": "cactus-tv",
-  "version": "0.8.6",
+  "version": "1.1.0",
   "private": true,
-  "description": "Cactus TV with Cloudflare Pages, D1 and CactusStreamflow Cache API edge caching.",
+  "description": "Cactus Performance Core with personalized recommendations, progressive home rendering, mature gestures, deep buffering, and optional clean-stream filtering.",
   "scripts": {
     "dev": "wrangler pages dev public",
     "vendor": "node -e \"const fs=require('node:fs');fs.copyFileSync('node_modules/hls.js/dist/hls.min.js','public/vendor/hls.min.js');fs.copyFileSync('node_modules/dashjs/dist/legacy/umd/dash.all.min.js','public/vendor/dash.all.min.js');fs.copyFileSync('node_modules/dashjs/dist/legacy/umd/dash.all.min.js.LICENSE.txt','public/vendor/dash.all.min.js.LICENSE.txt')\"",
