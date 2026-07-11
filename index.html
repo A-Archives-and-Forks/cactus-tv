@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#080808" />
+  <meta name="description" content="Cactus TV" />
+  <title>Cactus TV</title>
+  <link rel="icon" href="/assets/cactus.svg" type="image/svg+xml" />
+  <link rel="modulepreload" href="/js/app.js?v=1.2.8" />
+  <link rel="modulepreload" href="/js/api.js?v=0.9.0" />
+  <link rel="modulepreload" href="/js/storage.js?v=0.9.0" />
+  <link rel="stylesheet" href="/styles.css?v=1.2.8" />
+</head>
+<body>
+  <header class="topbar" id="topbar">
+    <a class="brand" href="/" aria-label="Cactus TV 首页">
+      <span class="brand-word" id="brandName">CACTUS</span><span class="brand-tv">TV</span>
+    </a>
+
+    <nav class="nav-tabs" aria-label="页面导航">
+      <button class="nav-tab active" data-view="home" type="button">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 10.5 12 3.7l8.5 6.8v9.2h-5.3v-6H8.8v6H3.5v-9.2Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>
+        <span>首页</span>
+      </button>
+      <button class="nav-tab" data-view="favorites" type="button">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20.2 4.4 13A5.3 5.3 0 0 1 12 5.8 5.3 5.3 0 0 1 19.6 13L12 20.2Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>
+        <span>我的片单</span>
+      </button>
+      <button class="nav-tab" data-view="history" type="button">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.2 8.3A8.5 8.5 0 1 1 3.6 14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M4 3.8v5h5M12 7.4V12l3.1 2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span>继续观看</span>
+      </button>
+    </nav>
+
+    <div class="top-actions">
+      <button id="searchToggle" class="icon-button" type="button" aria-label="搜索" title="搜索">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.7" cy="10.7" r="6.8" fill="none" stroke="currentColor" stroke-width="2"/><path d="m15.8 15.8 4.5 4.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      </button>
+      <button id="settingsButton" class="icon-button" type="button" aria-label="播放设置" title="播放设置">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Zm9 3.5-2.1-1.2.2-1.2-1.7-2.9-1.2.5-1-.7-.1-1.3h-3.4l-.1 1.3-1 .7-1.2-.5-1.7 2.9.1 1.2L3 12l2.1 1.2-.1 1.2 1.7 2.9 1.2-.5 1 .7.1 1.3h3.4l.1-1.3 1-.7 1.2.5 1.7-2.9-.1-1.2L21 12Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
+      </button>
+    </div>
+
+    <form id="searchForm" class="top-search" role="search">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.7" cy="10.7" r="6.8" fill="none" stroke="currentColor" stroke-width="2"/><path d="m15.8 15.8 4.5 4.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      <input id="searchInput" type="search" autocomplete="off" placeholder="搜索电影、剧集或关键词" aria-label="搜索影视" />
+      <button class="search-submit" type="submit">搜索</button>
+      <button class="search-close" id="searchClose" type="button" aria-label="关闭搜索">×</button>
+    </form>
+  </header>
+
+  <main>
+    <section class="hero" id="hero">
+      <div class="hero-backdrop" id="heroBackdrop"></div>
+      <div class="hero-artwork" id="heroArtworkWrap"><img id="heroArtwork" alt="" referrerpolicy="no-referrer" /></div>
+      <div class="hero-vignette"></div>
+      <div class="hero-content">
+        <div class="hero-copy">
+          <h1 id="heroTitle">今晚看什么？</h1>
+          <div class="hero-meta" id="heroMeta"></div>
+          <p id="heroOverview"></p>
+          <div class="hero-actions">
+            <button id="heroPlayButton" class="hero-button hero-button-primary" type="button">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 11 7-11 7V5Z" fill="currentColor"/></svg>
+              查找片源
+            </button>
+            <button id="heroInfoButton" class="hero-button hero-button-secondary" type="button">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 10.5V17M12 7.3v.2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+              浏览片单
+            </button>
+          </div>
+        </div>
+        <div id="sourcePills" class="source-pills" hidden></div>
+      </div>
+    </section>
+
+    <div id="notice" class="notice hidden"></div>
+
+    <nav id="categoryNav" class="category-nav hidden" aria-label="内容分类"></nav>
+
+    <section id="homeSections" class="home-sections"></section>
+
+    <section id="resultsSection" class="content-section hidden">
+      <div class="section-heading results-heading">
+        <h2 id="sectionTitle">搜索结果</h2>
+        <span id="resultCount" class="muted"></span>
+        <span id="sectionKicker" class="hidden"></span>
+      </div>
+      <div id="resultFilters" class="result-filters hidden" aria-label="筛选结果"></div>
+      <div id="skeletons" class="media-grid hidden" aria-hidden="true"></div>
+      <div id="mediaGrid" class="media-grid"></div>
+      <button id="loadMoreButton" class="load-more hidden" type="button">显示更多</button>
+      <div id="emptyState" class="empty-state hidden"><div class="empty-icon">C</div><h3>暂无内容</h3><p>换个片名或筛选条件再试试。</p></div>
+    </section>
+  </main>
+
+  <dialog id="detailDialog" class="sheet">
+    <button class="sheet-close" data-close="detailDialog" aria-label="关闭">×</button>
+    <div id="detailContent"></div>
+  </dialog>
+
+  <dialog id="playerDialog" class="player-dialog">
+    <div class="player-head">
+      <div class="player-title-wrap"><strong id="playerTitle">正在播放</strong><span id="playerSubtitle"></span></div>
+      <button class="sheet-close" data-close="playerDialog" aria-label="关闭播放器">×</button>
+    </div>
+    <div id="videoShell" class="video-shell controls-visible" tabindex="0" aria-label="视频播放器">
+      <video id="videoPlayer" playsinline preload="auto"></video>
+      <div id="playerBrightnessShade" class="player-brightness-shade" aria-hidden="true"></div>
+      <button id="playerLock" class="player-lock-button" type="button" aria-label="锁定播放器" title="锁定播放器"></button>
+      <div id="playerLoading" class="player-loading">
+        <span class="player-spinner" aria-hidden="true"></span>
+        <span id="playerLoadingText">正在加载…</span>
+      </div>
+      <button id="centerPlay" class="center-play hidden" type="button" aria-label="播放"></button>
+      <div id="playerGesture" class="player-gesture hidden" aria-live="polite"></div>
+      <pre id="playerDiagnosticsPanel" class="player-diagnostics-panel hidden" aria-live="polite"></pre>
+      <div id="playerMessage" class="player-message hidden">
+        <span>播放失败</span>
+        <button id="playerRetry" type="button">重新加载</button>
+      </div>
+      <div id="nextEpisodePrompt" class="next-episode-prompt hidden" aria-live="polite">
+        <strong>即将播放下一集</strong>
+        <span id="nextEpisodeText"></span>
+        <div><button id="nextEpisodeNow" type="button">立即播放</button><button id="nextEpisodeCancel" type="button">取消</button></div>
+      </div>
+      <div id="playerControls" class="player-controls">
+        <div class="player-progress-wrap">
+          <div class="player-progress-track"><span id="playerBuffered" class="player-buffered"></span><span id="playerPlayed" class="player-played"></span></div>
+          <input id="playerProgress" type="range" min="0" max="1000" value="0" step="1" aria-label="播放进度" />
+        </div>
+        <div class="player-control-row">
+          <div class="player-control-left">
+            <button id="playerPlayToggle" class="player-control-button" type="button" aria-label="播放"></button>
+            <button id="playerPrev" class="player-control-button player-skip-button" type="button" aria-label="上一集" title="上一集">⏮</button>
+            <button id="playerNext" class="player-control-button player-skip-button" type="button" aria-label="下一集" title="下一集">⏭</button>
+            <button id="playerMute" class="player-control-button" type="button" aria-label="静音"></button>
+            <input id="playerVolume" class="player-volume" type="range" min="0" max="1" value="1" step="0.01" aria-label="音量" />
+            <span class="player-time"><span id="playerCurrentTime">0:00</span><i>/</i><span id="playerDuration">0:00</span></span>
+          </div>
+          <div class="player-control-right">
+            <label class="player-select-wrap player-quality-wrap hidden" aria-label="清晰度"><select id="playerQuality" disabled><option value="-1">自动</option></select></label>
+            <label class="player-select-wrap player-audio-wrap hidden" aria-label="音轨"><select id="playerAudioTrack" disabled><option value="-1">默认音轨</option></select></label>
+            <label class="player-select-wrap player-embedded-subtitle-wrap hidden" aria-label="内嵌字幕"><select id="playerEmbeddedSubtitle" disabled><option value="-1">内嵌字幕关</option></select></label>
+            <label class="player-select-wrap player-speed-wrap" aria-label="播放速度"><select id="playerSpeed"><option value="0.5">0.5×</option><option value="0.75">0.75×</option><option value="1" selected>1×</option><option value="1.25">1.25×</option><option value="1.5">1.5×</option><option value="2">2×</option></select></label>
+            <button id="playerDiagnostics" class="player-control-button" type="button" aria-label="播放诊断" title="播放诊断"></button>
+            <button id="playerPip" class="player-control-button player-text-button" type="button" aria-label="画中画">画中画</button>
+            <button id="playerToolsToggle" class="player-control-button player-tools-toggle" type="button" aria-label="字幕与线路" title="字幕与线路" aria-expanded="false"></button>
+            <button id="playerFullscreen" class="player-control-button" type="button" aria-label="全屏" title="全屏"></button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div id="playerTools" class="player-tools">
+      <div class="player-tools-head"><strong>字幕与线路</strong><button id="playerToolsClose" type="button" aria-label="关闭字幕与线路">×</button></div>
+      <label>字幕<select id="subtitleSelect"><option value="">关闭</option></select></label>
+      <label class="file-button">加载本地字幕<input id="subtitleFile" type="file" accept=".vtt,.srt,text/vtt,application/x-subrip" /></label>
+      <button id="playerSwitchSource" class="file-button player-source-switch" type="button">切换备用线路</button>
+      <span id="playbackStatus" class="playback-status"></span>
+      <span id="resumeHint" class="muted"></span>
+      <span class="player-shortcuts">空格播放 · ←/→ 快退快进 · D 诊断 · F 全屏</span>
+    </div>
+  </dialog>
+
+  <dialog id="settingsDialog" class="settings-dialog">
+    <button class="sheet-close" data-close="settingsDialog" aria-label="关闭">×</button>
+    <div class="settings-copy"><h2>播放设置</h2>
+      <label class="setting-row"><span><strong>记录观看历史</strong><small>保存在当前浏览器</small></span><input id="historyToggle" type="checkbox" checked /></label>
+      <label class="setting-row"><span><strong>优先使用原生 HLS</strong><small>设备支持时直接播放</small></span><input id="nativeHlsToggle" type="checkbox" checked /></label>
+      <label class="setting-row"><span><strong>恢复播放进度</strong><small>从上次停止的位置继续</small></span><input id="resumeToggle" type="checkbox" checked /></label>
+      <label class="setting-row"><span><strong>播放失败自动换源</strong><small>保留当前进度并尝试其他线路或数据源</small></span><input id="failoverToggle" type="checkbox" checked /></label>
+      <label class="setting-row"><span><strong>自动播放下一集</strong><small>播放结束后倒计时进入下一集</small></span><input id="autoNextToggle" type="checkbox" checked /></label>
+      <label class="setting-row"><span><strong>Cactus Clean Stream</strong><small>实验性过滤 HLS 中带明确广告标记或广告地址的分片；仅对受控代理线路生效</small></span><input id="cleanStreamToggle" type="checkbox" checked /></label>
+      <label class="setting-row"><span><strong>个性化推荐</strong><small>仅使用收藏、观看进度和内容类型在本机轻量计算，不阻塞首页</small></span><input id="recommendationToggle" type="checkbox" checked /></label>
+    </div>
+  </dialog>
+
+  <div id="toast" class="toast hidden" role="status"></div>
+
+  <footer><span id="footerName">Cactus TV</span><span id="metadataCredit"></span></footer>
+  <script type="module" src="/js/app.js?v=1.2.8"></script>
+  <script nomodule src="/js/app-legacy.js?v=1.2.8"></script>
+</body>
+</html>
