@@ -4,6 +4,8 @@ let dashLoaderPromise = null;
 let playbackGeneration = 0;
 let subtitleUrls = [];
 const preconnectedOrigins = new Set();
+const MPEG_TS_WRAP_SECONDS = (2 ** 33) / 90000;
+const MAX_REASONABLE_VOD_DURATION = 12 * 60 * 60;
 
 function emit(video, name, detail = {}) {
   video.dispatchEvent(new CustomEvent(`cactus:${name}`, { detail }));
@@ -227,6 +229,7 @@ function cleanupSession(session, clearSource = true) {
   session.hls = null;
   session.dash = null;
   if (clearSource) {
+    try { session.video.__cactusTrustedDuration = 0; } catch {}
     session.video.pause();
     session.video.removeAttribute('src');
     session.video.load();
@@ -251,7 +254,12 @@ function createSession(video, url, resumeAt) {
     videoFrameCallbackId: 0, lastDecodedFrames: 0, lastVisualCheckMediaTime: 0,
     visualFreezeSince: 0, visualRecoveries: 0, lastVisualRecoveryAt: 0,
     seekGeneration: 0, seekStartedAt: 0, seekFrameSerial: 0, seekWasPlaying: false,
+    requestedPosition: Math.max(0, Number(resumeAt) || 0),
+    lastGoodPosition: Math.max(0, Number(resumeAt) || 0),
+    seekTarget: Math.max(0, Number(resumeAt) || 0),
+    trustedDuration: 0, durationAnomalyReported: false, seekRecoveryPending: false,
   };
+  try { video.__cactusTrustedDuration = 0; } catch {}
   activeSession = session;
   return session;
 }
@@ -271,13 +279,84 @@ function addTimer(session, callback, delay, repeat = false) {
   return timer;
 }
 
+function playbackError(message, code, position = 0, extra = {}) {
+  const error = new Error(message);
+  error.code = code;
+  error.position = Math.max(0, Number(position) || 0);
+  Object.assign(error, extra);
+  return error;
+}
+
+function finiteDuration(value) {
+  const duration = Number(value);
+  return Number.isFinite(duration) && duration > 0 ? duration : 0;
+}
+
+function effectiveDuration(session) {
+  const trusted = finiteDuration(session?.trustedDuration);
+  if (trusted) return trusted;
+  const raw = finiteDuration(session?.video?.duration);
+  return raw && raw <= MAX_REASONABLE_VOD_DURATION ? raw : 0;
+}
+
+function isDurationAnomaly(session, rawDuration) {
+  const raw = finiteDuration(rawDuration);
+  const trusted = finiteDuration(session?.trustedDuration);
+  if (!raw || !trusted) return false;
+  const ptsWrapLike = raw > 20 * 60 * 60 && trusted < MAX_REASONABLE_VOD_DURATION
+    && Math.abs(raw - MPEG_TS_WRAP_SECONDS) < 3 * 60 * 60;
+  const hugeJump = raw > Math.max(MAX_REASONABLE_VOD_DURATION, trusted * 3)
+    && raw - trusted > 4 * 60 * 60;
+  return ptsWrapLike || hugeJump;
+}
+
+function setTrustedDuration(session, value, source = 'media') {
+  const duration = finiteDuration(value);
+  if (!duration || session.cleaned) return false;
+  // Before the media playlist has supplied a trustworthy VOD duration, reject
+  // obviously impossible HTMLMediaElement durations (for example the MPEG-TS
+  // 33-bit PTS wrap near 26.5 hours) instead of publishing them to the UI.
+  if (source !== 'playlist' && !finiteDuration(session.trustedDuration) && duration > MAX_REASONABLE_VOD_DURATION) return false;
+  if (source !== 'playlist' && isDurationAnomaly(session, duration)) {
+    if (!session.durationAnomalyReported) {
+      session.durationAnomalyReported = true;
+      const position = Math.min(
+        finiteDuration(session.trustedDuration) || duration,
+        Math.max(0, Number(session.seekTarget || session.lastGoodPosition || session.video.currentTime || 0)),
+      );
+      emit(session.video, 'durationAnomaly', { rawDuration: duration, trustedDuration: session.trustedDuration, position });
+      failSession(session, playbackError('媒体时间轴异常，正在安全重载', 'TIMELINE_CORRUPTED', position, { rawDuration: duration, trustedDuration: session.trustedDuration }));
+    }
+    return false;
+  }
+  const current = finiteDuration(session.trustedDuration);
+  if (!current || source === 'playlist' || Math.abs(duration - current) <= Math.max(8, current * 0.08)) {
+    session.trustedDuration = duration;
+    try { session.video.__cactusTrustedDuration = duration; } catch {}
+    emit(session.video, 'duration', { duration, source });
+    return true;
+  }
+  return false;
+}
+
+function clampPlaybackPosition(session, value) {
+  const duration = effectiveDuration(session);
+  const position = Math.max(0, Number(value) || 0);
+  return duration > 2 ? Math.min(position, Math.max(0, duration - 1.5)) : position;
+}
+
 function applyResume(session) {
   const { video, resumeAt } = session;
-  if (session.recoveredPosition || resumeAt <= 3 || !Number.isFinite(video.duration)) return;
-  if (resumeAt < video.duration - 5) {
-    try { video.currentTime = resumeAt; } catch {}
-  }
-  session.recoveredPosition = true;
+  if (session.recoveredPosition || resumeAt <= 3) return;
+  const duration = effectiveDuration(session);
+  if (!duration) return;
+  const target = clampPlaybackPosition(session, resumeAt);
+  session.requestedPosition = target;
+  session.seekTarget = target;
+  try {
+    if (Math.abs(Number(video.currentTime || 0) - target) > 0.35) video.currentTime = target;
+    session.recoveredPosition = true;
+  } catch {}
 }
 
 function bufferAhead(video) {
@@ -356,7 +435,14 @@ function markPresentedFrame(session, mediaTime = session.video.currentTime) {
   session.lastVideoFrameAt = performance.now();
   session.lastVideoFrameMediaTime = Number(mediaTime || 0);
   session.videoFrameSerial += 1;
+  const nearSeekTarget = Math.abs(Number(mediaTime || 0) - Number(session.seekTarget || 0)) < 3.5;
+  if (!session.video.seeking && (!session.seekRecoveryPending || nearSeekTarget)) {
+    const shown = clampPlaybackPosition(session, Number(mediaTime || session.video.currentTime || 0));
+    session.lastGoodPosition = shown;
+    session.requestedPosition = shown;
+  }
   session.visualFreezeSince = 0;
+  if (session.seekRecoveryPending && nearSeekTarget) session.seekRecoveryPending = false;
   if (session.visualRecoveries && performance.now() - Number(session.lastVisualRecoveryAt || 0) > 8000) {
     session.visualRecoveries = 0;
   }
@@ -387,39 +473,26 @@ function bindVideoFrameMonitor(session) {
 function recoverVisualFreeze(session, reason = 'video-frame-stalled', { resume = !session.video.paused } = {}) {
   if (!session || !session.verified || session.cleaned || session.failed || session.video.seeking || document.hidden || !navigator.onLine) return false;
   const now = performance.now();
-  if (now - Number(session.lastVisualRecoveryAt || 0) < 1800) return false;
+  if (now - Number(session.lastVisualRecoveryAt || 0) < 3500) return false;
 
   const { video } = session;
-  const position = Math.max(0, Number(video.currentTime || 0));
+  const position = clampPlaybackPosition(session, session.seekTarget || session.requestedPosition || video.currentTime || session.lastGoodPosition);
   const frameSerial = Number(session.videoFrameSerial || 0);
-  const attempt = Number(session.visualRecoveries || 0) + 1;
-  session.visualRecoveries = attempt;
   session.lastVisualRecoveryAt = now;
   session.visualFreezeSince = now;
   session.qualityRecoveryHoldUntil = Math.max(Number(session.qualityRecoveryHoldUntil || 0), now + 20_000);
-  emit(video, 'state', { state: 'recovering', attempt, reason });
-  emit(video, 'visualRecovery', { attempt, reason, position });
+  emit(video, 'state', { state: 'recovering', attempt: 1, reason });
+  emit(video, 'visualRecovery', { attempt: 1, reason, position });
 
   try {
     if (session.hls) {
       emergencyDownshift(session);
-      if (attempt === 1) {
-        // Restart fragment loading around the current clock without changing
-        // currentTime again. A second synthetic seek here can race the user's
-        // seek and create another frozen-frame loop.
-        try { session.hls.stopLoad(); } catch {}
-        try { session.hls.startLoad(Math.max(0, position - 0.2)); } catch {}
-      } else {
-        try { session.hls.stopLoad(); } catch {}
-        try {
-          if (attempt >= 3) session.hls.swapAudioCodec();
-          session.hls.recoverMediaError();
-        } catch {}
-      }
+      try { session.hls.stopLoad(); } catch {}
+      try { session.hls.startLoad(Math.max(0, position - 0.12)); } catch {}
     } else if (session.dash) {
-      try { session.dash.seek(Math.max(0, position - 0.04)); } catch {}
+      try { session.dash.seek(position); } catch {}
     } else {
-      try { video.currentTime = Math.max(0, position - 0.04); } catch {}
+      try { video.currentTime = position; } catch {}
     }
     if (resume) safePlay(video).catch(() => {});
   } catch {}
@@ -427,43 +500,54 @@ function recoverVisualFreeze(session, reason = 'video-frame-stalled', { resume =
   addTimer(session, () => {
     if (session.cleaned || session.failed || video.seeking) return;
     const frameRecovered = Number(session.videoFrameSerial || 0) > frameSerial
-      && Math.abs(Number(session.lastVideoFrameMediaTime || video.currentTime) - Number(video.currentTime || 0)) < 2.5;
+      && Math.abs(Number(session.lastVideoFrameMediaTime || video.currentTime) - Number(video.currentTime || position)) < 3.5;
     if (frameRecovered) {
       session.visualFreezeSince = 0;
       emit(video, 'state', { state: video.paused ? 'ready' : 'playing', reason: 'video-frame-recovered' });
       return;
     }
-    if (attempt < 3) recoverVisualFreeze(session, reason, { resume });
-    else failSession(session, new Error('画面解码持续冻结，正在切换备用线路'));
-  }, attempt === 1 ? 1600 : 2200);
+    failSession(session, playbackError('画面未恢复，正在重建当前播放线路', 'VIDEO_FRAME_FROZEN', position));
+  }, 5000);
   return true;
 }
 
 function scheduleSeekFrameVerification(session) {
   const { video } = session;
   const generation = Number(session.seekGeneration || 0);
-  const target = Number(video.currentTime || 0);
+  const target = clampPlaybackPosition(session, session.seekTarget || video.currentTime || 0);
   const frameSerial = Number(session.seekFrameSerial || session.videoFrameSerial || 0);
   const resume = Boolean(session.seekWasPlaying);
+  session.seekRecoveryPending = true;
 
   if (session.hls) {
-    try { session.hls.startLoad(Math.max(0, target - 0.15)); } catch {}
-  } else if (session.dash) {
-    try { session.dash.seek(target); } catch {}
+    try { session.hls.startLoad(Math.max(0, target - 0.12)); } catch {}
   }
+
+  const bufferedAtTarget = (() => {
+    try {
+      for (let i = 0; i < video.buffered.length; i += 1) {
+        if (video.buffered.start(i) <= target + 0.1 && video.buffered.end(i) >= target + 0.25) return true;
+      }
+    } catch {}
+    return false;
+  })();
 
   addTimer(session, () => {
     if (session.cleaned || session.failed || video.seeking || generation !== session.seekGeneration) return;
+    session.seekRecoveryPending = false;
     const frameAdvanced = Number(session.videoFrameSerial || 0) > frameSerial;
-    const frameNearTarget = Math.abs(Number(session.lastVideoFrameMediaTime || -9999) - Number(video.currentTime || target)) < 2.5;
-    if (frameAdvanced && frameNearTarget) return;
-    recoverVisualFreeze(session, 'seek-video-frame-timeout', { resume });
-  }, 1400);
+    const frameNearTarget = Math.abs(Number(session.lastVideoFrameMediaTime || -9999) - Number(video.currentTime || target)) < 3.5;
+    if (frameAdvanced && frameNearTarget) {
+      session.lastGoodPosition = clampPlaybackPosition(session, video.currentTime);
+      return;
+    }
+    failSession(session, playbackError('拖动后视频画面未就绪，正在从目标位置重建', 'SEEK_FRAME_TIMEOUT', target, { resume }));
+  }, bufferedAtTarget ? 4200 : 8000);
 }
 
 function recoverStall(session) {
   const { video } = session;
-  if (document.hidden || !navigator.onLine || session.cleaned || session.failed) return;
+  if (document.hidden || !navigator.onLine || session.cleaned || session.failed || session.seekRecoveryPending) return;
   session.stallRecoveries += 1;
   emit(video, 'state', { state: 'reconnecting', attempt: session.stallRecoveries });
   try {
@@ -471,7 +555,7 @@ function recoverStall(session) {
       emergencyDownshift(session);
       const position = Math.max(0, Number(video.currentTime || 0) - 0.15);
       if (session.stallRecoveries === 1 && bufferAhead(video) > 0.45) {
-        video.currentTime = Math.min(video.duration || Infinity, video.currentTime + 0.08);
+        video.currentTime = Math.min(effectiveDuration(session) || Infinity, video.currentTime + 0.08);
       } else {
         try { session.hls.stopLoad(); } catch {}
         if (session.stallRecoveries >= 3 && video.readyState < 2) {
@@ -516,8 +600,11 @@ function bindStallMonitor(session) {
   listen(session, video, 'progress', markProgress);
   listen(session, video, 'playing', markProgress);
   listen(session, video, 'seeked', () => {
-    session.lastCurrentTime = Number(video.currentTime || 0);
-    session.lastVisualCheckMediaTime = Number(video.currentTime || 0);
+    const target = clampPlaybackPosition(session, video.currentTime || session.seekTarget || 0);
+    session.seekTarget = target;
+    session.requestedPosition = target;
+    session.lastCurrentTime = target;
+    session.lastVisualCheckMediaTime = target;
     session.lastProgressAt = performance.now();
     session.stallSince = 0;
     session.stallRecoveries = 0;
@@ -527,7 +614,7 @@ function bindStallMonitor(session) {
   listen(session, video, 'stalled', markStall);
   addTimer(session, () => {
     diagnostics(session);
-    if (!session.verified || video.paused || video.ended || video.seeking || session.failed || document.hidden || !navigator.onLine) return;
+    if (!session.verified || video.paused || video.ended || video.seeking || session.seekRecoveryPending || session.failed || document.hidden || !navigator.onLine) return;
     const now = performance.now();
     const noProgress = now - session.lastProgressAt;
     const starving = bufferAhead(video) < 0.25;
@@ -547,7 +634,7 @@ function bindStallMonitor(session) {
   // video decoder is frozen on one frame, so the ordinary stall monitor cannot
   // detect this failure. Watch actual presented video frames separately.
   addTimer(session, () => {
-    if (!session.verified || video.paused || video.ended || video.seeking || session.failed || document.hidden || !navigator.onLine) {
+    if (!session.verified || video.paused || video.ended || video.seeking || session.seekRecoveryPending || session.failed || document.hidden || !navigator.onLine) {
       session.lastVisualCheckMediaTime = Number(video.currentTime || 0);
       session.visualFreezeSince = 0;
       return;
@@ -651,8 +738,11 @@ function bindMediaState(session) {
     session.seekStartedAt = performance.now();
     session.seekFrameSerial = Number(session.videoFrameSerial || 0);
     session.seekWasPlaying = !video.paused;
+    session.seekTarget = clampPlaybackPosition(session, video.currentTime || session.requestedPosition || 0);
+    session.requestedPosition = session.seekTarget;
+    session.seekRecoveryPending = false;
     session.visualFreezeSince = 0;
-    session.lastVisualCheckMediaTime = Number(video.currentTime || 0);
+    session.lastVisualCheckMediaTime = session.seekTarget;
     state('buffering');
   });
   listen(session, video, 'playing', () => {
@@ -669,7 +759,14 @@ function bindMediaState(session) {
     releaseSessionWakeLock(session);
     state('ended');
   });
-  listen(session, video, 'loadedmetadata', () => { session.ready = true; applyResume(session); });
+  listen(session, video, 'loadedmetadata', () => {
+    session.ready = true;
+    setTrustedDuration(session, video.duration, 'media');
+    applyResume(session);
+  });
+  listen(session, video, 'durationchange', () => {
+    setTrustedDuration(session, video.duration, 'media');
+  });
   listen(session, video, 'error', () => {
     if (!session.verified || session.hls || session.dash) return;
     failSession(session, mediaError(video, '媒体播放失败'));
@@ -849,6 +946,7 @@ async function playWithHls(session) {
     fpsDroppedMonitoringPeriod: 5000,
     fpsDroppedMonitoringThreshold: 0.28,
     startLevel: slowNetwork ? 0 : -1,
+    startPosition: session.resumeAt > 3 ? session.resumeAt : -1,
     startFragPrefetch: true,
     testBandwidth: true,
     abrEwmaDefaultEstimate: defaultEstimate,
@@ -877,8 +975,8 @@ async function playWithHls(session) {
     levelLoadingTimeOut: 12000,
     levelLoadingMaxRetry: 3,
     levelLoadingRetryDelay: 500,
-    fragLoadingTimeOut: proxied ? 12000 : 20000,
-    fragLoadingMaxRetry: proxied ? 1 : 3,
+    fragLoadingTimeOut: proxied ? 20000 : 26000,
+    fragLoadingMaxRetry: proxied ? 2 : 3,
     fragLoadingRetryDelay: 600,
     fragLoadingMaxRetryTimeout: 5000,
     appendErrorMaxRetry: 3,
@@ -900,7 +998,7 @@ async function playWithHls(session) {
       const error = new Error(`播放失败：${data.details || data.type || '未知错误'}`);
       if (!session.verified) finish(error); else failSession(session, error, false);
     };
-    const startupTimer = addTimer(session, () => finish(new Error(manifestReady ? '首个视频分片加载超时' : '播放列表加载超时')), proxied ? 13000 : 20000);
+    const startupTimer = addTimer(session, () => finish(playbackError(manifestReady ? '首个视频分片加载超时' : '播放列表加载超时', manifestReady ? 'STARTUP_FRAGMENT_TIMEOUT' : 'MANIFEST_TIMEOUT', session.requestedPosition || session.resumeAt)), proxied ? 25000 : 32000);
     hls.on(Hls.Events.MEDIA_ATTACHED, () => { if (!session.cleaned) hls.loadSource(session.url); });
     hls.on(Hls.Events.MANIFEST_LOADED, (_event, data) => {
       try {
@@ -916,6 +1014,11 @@ async function playWithHls(session) {
         if (mode) emit(session.video, 'cleanstream', { mode, removed: session.cleanStreamRemoved });
       } catch {}
     });
+    hls.on(Hls.Events.LEVEL_LOADED, (_event, data) => {
+      const details = data?.details;
+      const duration = Number(details?.totalduration || 0);
+      if (!details?.live && duration > 0) setTrustedDuration(session, duration, 'playlist');
+    });
     hls.on(Hls.Events.MANIFEST_PARSED, async () => {
       manifestReady = true;
       emit(session.video, 'levels', levelPayload(hls));
@@ -923,7 +1026,7 @@ async function playWithHls(session) {
       applyResume(session);
       try {
         session.autoplayBlocked = !(await safePlay(session.video));
-        await waitForFirstFrame(session, proxied ? 12000 : 17000);
+        await waitForFirstFrame(session, proxied ? 22000 : 28000);
         finish();
       } catch (error) { finish(error); }
     });
@@ -996,11 +1099,10 @@ async function playWithHls(session) {
         return;
       }
 
-      if (data.type === Hls.ErrorTypes.MEDIA_ERROR && session.mediaRecoveries < 2) {
+      if (data.type === Hls.ErrorTypes.MEDIA_ERROR && session.mediaRecoveries < 1) {
         const attempt = ++session.mediaRecoveries;
         emit(session.video, 'state', { state: 'recovering', attempt });
         try {
-          if (attempt === 2) hls.swapAudioCodec();
           hls.recoverMediaError();
           return;
         } catch { fatal(data); return; }

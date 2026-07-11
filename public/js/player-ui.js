@@ -74,6 +74,7 @@ export function createPlayerUI({
   let timeFrame = 0;
   let diagnosticsVisible = false;
   let diagnosticsData = null;
+  let trustedDuration = 0;
   let locked = false;
   let brightness = (() => { try { return clamp(Number(localStorage.getItem('cactus:player-brightness') || 1), .2, 1); } catch { return 1; } })();
   let pointerSession = null;
@@ -94,6 +95,17 @@ export function createPlayerUI({
   const AXIS_LOCK_RATIO = 1.38;
   const DOUBLE_TAP_MS = 270;
   const persistPlayerPreference = (key, value) => { try { localStorage.setItem(key, String(value)); } catch {} };
+  const effectiveDuration = () => {
+    const coreDuration = Number(video.__cactusTrustedDuration || trustedDuration || 0);
+    if (Number.isFinite(coreDuration) && coreDuration > 0) return coreDuration;
+    const nativeDuration = Number(video.duration || 0);
+    return Number.isFinite(nativeDuration) && nativeDuration > 0 && nativeDuration < 12 * 60 * 60 ? nativeDuration : 0;
+  };
+  const clampedCurrentTime = () => {
+    const duration = effectiveDuration();
+    const current = Number.isFinite(video.currentTime) ? Math.max(0, video.currentTime) : 0;
+    return duration ? clamp(current, 0, duration) : current;
+  };
 
   const setIcon = (button, icon) => { if (button) button.innerHTML = svgIcon(icon); };
 
@@ -161,8 +173,8 @@ export function createPlayerUI({
   }
 
   function updateTime() {
-    const duration = Number.isFinite(video.duration) ? video.duration : 0;
-    const current = Number.isFinite(video.currentTime) ? video.currentTime : 0;
+    const duration = effectiveDuration();
+    const current = clampedCurrentTime();
     ui.current.textContent = formatClock(current);
     ui.duration.textContent = formatClock(duration);
     if (!scrubbing) {
@@ -241,8 +253,9 @@ export function createPlayerUI({
   }
 
   function seekBy(seconds) {
-    if (!Number.isFinite(video.duration)) return;
-    video.currentTime = clamp(video.currentTime + seconds, 0, video.duration);
+    const duration = effectiveDuration();
+    if (!duration) return;
+    video.currentTime = clamp(clampedCurrentTime() + seconds, 0, duration);
     showGesture({ label: seconds > 0 ? `快进 ${seconds} 秒` : `快退 ${Math.abs(seconds)} 秒`, detail: formatClock(video.currentTime) }, 700);
     showControls();
   }
@@ -426,7 +439,7 @@ export function createPlayerUI({
     } else if (session.mode === 'seek') {
       if (!cancelled && Number.isFinite(session.previewTime)) video.currentTime = session.previewTime;
       if (cancelled) hideGesture(0);
-      else showGesture({ label: '已定位', detail: `${formatClock(session.previewTime || 0)} / ${formatClock(video.duration || 0)}`, progress: (session.previewTime || 0) / Math.max(1, video.duration || 1) }, 460, 'seek');
+      else showGesture({ label: '已定位', detail: `${formatClock(session.previewTime || 0)} / ${formatClock(effectiveDuration())}`, progress: (session.previewTime || 0) / Math.max(1, effectiveDuration() || 1) }, 460, 'seek');
       suppressClickUntil = performance.now() + 450;
     } else if (session.mode === 'brightness' || session.mode === 'volume') {
       if (session.mode === 'brightness') applyBrightness(brightness, true);
@@ -450,8 +463,8 @@ export function createPlayerUI({
       startY: event.clientY,
       startVolume: video.muted ? 0 : video.volume,
       startBrightness: brightness,
-      startTime: Number(video.currentTime || 0),
-      previewTime: Number(video.currentTime || 0),
+      startTime: clampedCurrentTime(),
+      previewTime: clampedCurrentTime(),
       previousRate: video.playbackRate,
       startedAt: performance.now(),
       startRatio: (event.clientX - bounds.left) / Math.max(1, bounds.width),
@@ -515,7 +528,7 @@ export function createPlayerUI({
       });
     } else if (session.mode === 'seek') {
       event.preventDefault();
-      const duration = Number(video.duration || 0);
+      const duration = effectiveDuration();
       const normalized = clamp(Math.abs(dx) / Math.max(260, session.bounds.width), 0, 1);
       const elapsed = Math.max(0.08, (performance.now() - session.startedAt) / 1000);
       const velocityBoost = clamp((Math.abs(dx) / elapsed) / 900, 1, 1.8);
@@ -578,7 +591,7 @@ export function createPlayerUI({
         lastDoubleTapZone = zone;
         clearTimeout(doubleTapResetTimer);
         doubleTapResetTimer = window.setTimeout(() => { doubleTapSeekTotal = 0; lastDoubleTapZone = ''; }, 820);
-        if (Number.isFinite(video.duration)) video.currentTime = clamp(video.currentTime + (zone === 'left' ? -10 : 10), 0, video.duration);
+        { const duration = effectiveDuration(); if (duration) video.currentTime = clamp(clampedCurrentTime() + (zone === 'left' ? -10 : 10), 0, duration); }
         showGesture({ label: doubleTapSeekTotal > 0 ? `快进 ${doubleTapSeekTotal} 秒` : `快退 ${Math.abs(doubleTapSeekTotal)} 秒`, detail: formatClock(video.currentTime) }, 620);
         showControls();
       }
@@ -603,11 +616,11 @@ export function createPlayerUI({
     scrubbing = true;
     const ratio = Number(ui.progress.value) / 1000;
     ui.played.style.width = `${ratio * 100}%`;
-    ui.current.textContent = formatClock((video.duration || 0) * ratio);
+    ui.current.textContent = formatClock(effectiveDuration() * ratio);
     showControls(true);
   });
   ui.progress.addEventListener('change', () => {
-    if (Number.isFinite(video.duration)) video.currentTime = video.duration * Number(ui.progress.value) / 1000;
+    { const duration = effectiveDuration(); if (duration) video.currentTime = duration * Number(ui.progress.value) / 1000; }
     scrubbing = false;
     showControls();
   });
@@ -757,6 +770,11 @@ export function createPlayerUI({
   video.addEventListener('ended', updatePlayButton);
   video.addEventListener('timeupdate', scheduleTimeUpdate);
   video.addEventListener('durationchange', scheduleTimeUpdate);
+  video.addEventListener('cactus:duration', event => {
+    const duration = Number(event.detail?.duration || 0);
+    if (Number.isFinite(duration) && duration > 0) trustedDuration = duration;
+    scheduleTimeUpdate();
+  });
   video.addEventListener('progress', scheduleTimeUpdate);
   video.addEventListener('volumechange', updateVolume);
   video.addEventListener('ratechange', () => { ui.speed.value = String(video.playbackRate); });
@@ -820,7 +838,7 @@ export function createPlayerUI({
       pointerSession = null; suppressClickUntil = 0;
       if (timeFrame) cancelAnimationFrame(timeFrame);
       finishGestureFrame();
-      timeFrame = 0; gestureFrame = 0; pendingGestureUpdate = null; lastTapTime = 0; lastTapZone = ''; lastDoubleTapAt = 0; lastDoubleTapZone = ''; doubleTapSeekTotal = 0; diagnosticsData = null; diagnosticsVisible = false;
+      timeFrame = 0; gestureFrame = 0; pendingGestureUpdate = null; lastTapTime = 0; lastTapZone = ''; lastDoubleTapAt = 0; lastDoubleTapZone = ''; doubleTapSeekTotal = 0; diagnosticsData = null; diagnosticsVisible = false; trustedDuration = 0;
       setLocked(false);
       closeTools();
       message.classList.add('hidden');
