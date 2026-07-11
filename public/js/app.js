@@ -1,5 +1,5 @@
-import { api } from './api.js?v=0.7.0';
-import { store } from './storage.js?v=0.7.0';
+import { api } from './api.js?v=0.8.0';
+import { store } from './storage.js?v=0.8.0';
 
 const $ = selector => document.querySelector(selector);
 const els = {
@@ -65,6 +65,7 @@ let nextEpisodeTimer = 0;
 let nextEpisodeDeadline = 0;
 let nextEpisodeTarget = null;
 let streamflowBackendReady = false;
+let streamflowGeneration = 1;
 
 els.historyToggle.checked = settings.recordHistory;
 els.nativeHlsToggle.checked = settings.preferNativeHls;
@@ -1004,13 +1005,6 @@ function mediaSessionFor(candidate) {
 }
 
 
-function formatBytes(value) {
-  const bytes = Math.max(0, Number(value) || 0);
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KB`;
-  if (bytes < 1024 ** 3) return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
-  return `${(bytes / 1024 ** 3).toFixed(2)} GB`;
-}
 
 function fallbackHash(value) {
   const seeds = [2166136261, 2246822519, 3266489917, 668265263, 374761393, 2654435761, 1597334677, 3812015801];
@@ -1060,6 +1054,7 @@ async function prepareStreamflow(playback, candidate) {
   const id = await sha256Hex(identity);
   const playUrl = new URL(source.proxyUrl);
   playUrl.searchParams.set('sf', id);
+  playUrl.searchParams.set('sfg', String(streamflowGeneration));
   playUrl.searchParams.delete('sfi');
   playUrl.searchParams.delete('sft');
   return {
@@ -1067,6 +1062,7 @@ async function prepareStreamflow(playback, candidate) {
     provider: source.provider,
     sourceUrl: source.sourceUrl,
     playUrl: `${playUrl.pathname}${playUrl.search}`,
+    generation: streamflowGeneration,
   };
 }
 
@@ -1088,6 +1084,7 @@ async function sendStreamflowHeartbeat(phase = 'playing', keepalive = false, all
     duration: Number.isFinite(els.player.duration) ? els.player.duration : 0,
     phase,
     enabled: settings.streamflowEnabled !== false,
+    generation: streamflow.generation || streamflowGeneration,
   };
   playback.lastStreamflowSync = Date.now();
   try {
@@ -1113,24 +1110,19 @@ async function sendStreamflowHeartbeat(phase = 'playing', keepalive = false, all
 function renderStreamflowStatus(payload) {
   if (!els.streamflowStatus || !els.streamflowSessions) return;
   if (!payload?.ready) {
-    els.streamflowStatus.textContent = '未绑定 R2、Queue 或 D1';
+    els.streamflowStatus.textContent = '当前运行环境不支持 Cache API';
     els.streamflowSessions.innerHTML = '';
     els.streamflowClear.disabled = true;
     return;
   }
-  const total = Number(payload.totalBytes || 0);
-  const limit = Number(payload.limitBytes || 0);
-  els.streamflowStatus.textContent = `${formatBytes(total)}${limit ? ` / ${formatBytes(limit)}` : ''} · ${Number(payload.totalObjects || 0)} 个分片`;
-  const labels = { planning: '分析中', caching: '缓存中', ready: '已就绪', limit: '达到单集上限', error: '失败', deleting: '清理中' };
-  els.streamflowSessions.innerHTML = (payload.sessions || []).map(session => {
-    const name = [session.title, session.episode_name].filter(Boolean).join(' · ') || '未命名缓存';
-    const state = labels[session.cache_state] || session.cache_state || '等待';
-    const range = Number(session.cached_end_seconds || 0) > 0
-      ? `${formatTime(session.cached_start_seconds || 0)}–${formatTime(session.cached_end_seconds || 0)}`
-      : '尚无可用区间';
-    const error = session.last_error ? ` · ${escapeHtml(session.last_error)}` : '';
-    return `<div class="streamflow-session"><strong>${escapeHtml(name)}</strong><small>${escapeHtml(state)} · ${formatBytes(session.cached_bytes || 0)} · ${range}${error}</small></div>`;
-  }).join('');
+  const generation = Number(payload.generation || streamflowGeneration || 1);
+  streamflowGeneration = generation;
+  els.streamflowStatus.textContent = `Cloudflare Cache API · 缓存代数 ${generation}`;
+  els.streamflowSessions.innerHTML = [
+    '<div class="streamflow-session"><strong>边看边缓存</strong><small>实际播放过的 HLS 分片会写入当前 Cloudflare 边缘节点，命中时直接返回。</small></div>',
+    '<div class="streamflow-session"><strong>智能预取</strong><small>观看超过三分之一后，每次心跳预取后续一小批；退出时最多再尝试 12 个对象。</small></div>',
+    '<div class="streamflow-session"><strong>临时缓存</strong><small>无法统计容量，不保证永久保存；切换网络或地区后可能落到其他节点而未命中。</small></div>',
+  ].join('');
   els.streamflowClear.disabled = false;
 }
 
@@ -1142,6 +1134,7 @@ async function loadStreamflowStatus() {
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload.error || '缓存状态读取失败');
     streamflowBackendReady = Boolean(payload.ready);
+    streamflowGeneration = Number(payload.generation || streamflowGeneration || 1);
     renderStreamflowStatus(payload);
   } catch (error) {
     els.streamflowStatus.textContent = error.message || '缓存状态读取失败';
@@ -1537,18 +1530,19 @@ els.settingsButton.addEventListener('click', () => {
 }));
 els.streamflowRefresh.addEventListener('click', () => loadStreamflowStatus());
 els.streamflowClear.addEventListener('click', async () => {
-  if (!confirm('确定清空 CactusStreamflow 在 R2 中的所有缓存吗？')) return;
+  if (!confirm('确定重置 CactusStreamflow 边缘缓存吗？旧缓存不会再被读取，并由 Cloudflare 自动淘汰。')) return;
   els.streamflowClear.disabled = true;
-  els.streamflowStatus.textContent = '正在提交清理任务…';
+  els.streamflowStatus.textContent = '正在切换缓存代数…';
   try {
     const response = await fetch('/api/cache/clear', { method: 'POST', credentials: 'same-origin', headers: { Accept: 'application/json' } });
     const payload = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(payload.error || '清理任务提交失败');
-    els.streamflowStatus.textContent = '正在分批清空 R2 缓存';
-    els.streamflowSessions.innerHTML = '';
-    toast('CactusStreamflow 已开始清理');
+    if (!response.ok) throw new Error(payload.error || '缓存重置失败');
+    streamflowGeneration = Number(payload.generation || Date.now());
+    renderStreamflowStatus({ ready: true, generation: streamflowGeneration });
+    toast('CactusStreamflow 边缘缓存已重置');
   } catch (error) {
-    els.streamflowStatus.textContent = error.message || '清理失败';
+    els.streamflowStatus.textContent = error.message || '缓存重置失败';
+  } finally {
     els.streamflowClear.disabled = false;
   }
 });
@@ -1671,6 +1665,7 @@ async function loadHealth() {
     els.footerName.textContent = siteName;
     document.title = siteName;
     streamflowBackendReady = Boolean(health.streamflowReady);
+    streamflowGeneration = Number(health.streamflowGeneration || 1);
     if (health.tmdbReady) els.metadataCredit.innerHTML = '<a class="footer-link" href="https://www.themoviedb.org" target="_blank" rel="noreferrer">Metadata by TMDB</a>';
     else els.metadataCredit.textContent = '影片资料来自豆瓣';
     els.sourcePills.innerHTML = (health.providers || []).map(provider => `<span class="source-pill ${provider.proxyEnabled ? 'proxied' : ''}">${escapeHtml(provider.name)}</span>`).join('');
