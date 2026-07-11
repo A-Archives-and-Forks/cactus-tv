@@ -1,5 +1,5 @@
-import { api } from './api.js?v=0.8.2';
-import { store } from './storage.js?v=0.8.2';
+import { api } from './api.js?v=0.8.3';
+import { store } from './storage.js?v=0.8.3';
 
 const $ = selector => document.querySelector(selector);
 const els = {
