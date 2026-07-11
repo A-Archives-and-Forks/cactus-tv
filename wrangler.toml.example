@@ -3,7 +3,7 @@ compatibility_date = "2026-07-01"
 pages_build_output_dir = "./public"
 
 # Cactus TV 只需要原来的 D1 绑定。
-# CactusStreamflow v0.8.0 使用 Cloudflare Cache API，不需要 R2、Queue 或额外 Worker。
+# Cactus Player 2.0 不需要 R2、Queue 或额外 Worker。
 [[d1_databases]]
 binding = "DB"
 database_name = "cactus-tv-db"

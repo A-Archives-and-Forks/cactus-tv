@@ -1,14 +1,24 @@
-# CactusStreamflow v0.8.0 补丁安装
+# Cactus Performance Core v1.1.0 升级说明
 
-1. 按原目录结构覆盖补丁里的所有文件。
-2. 按 `DELETE_THESE_FILES.txt` 删除旧 R2 版文件。
-3. Cloudflare Pages 中删除 `STREAMFLOW_R2` 和 `STREAMFLOW_QUEUE` 绑定（如果以前添加过）。
-4. 保留原 D1 的 `DB` 绑定。
-5. 不需要 R2、Queue、额外 Worker，也不需要执行新的 SQL。
-6. 提交 GitHub，等待 Pages 自动重新部署。
-7. 打开 `/api/health`，确认：
+适用于从 v1.0.0 Cactus Player 2.0 升级，也兼容已经完成 Streamflow 清理的 v0.9.x 项目。
 
-```json
-"streamflowReady": true,
-"streamflowEngine": "cache-api"
-```
+## 操作
+
+1. 将补丁包中的文件按原目录覆盖到 GitHub 仓库。
+2. 提交修改。
+3. 等待原 Cloudflare Pages 自动部署。
+4. 关闭旧页面后重新打开，确保加载 `v1.1.0` 前端资源。
+
+Cloudflare Pages、D1、Bindings 和环境变量都不需要修改，也不需要执行新 SQL。
+
+## 本版变化
+
+- 首页首屏不再等待 D1 片单同步和站点健康检查。
+- 新增 `继续观看` 与 `为你推荐` 两条轻量个性化片单。
+- 推荐综合收藏、完成比例、观看时长、类型、题材、年代、评分和少量探索权重。
+- 推荐结果加入多样性重排，避免同类内容连续霸屏。
+- 新增个性化推荐开关，所有推荐都在当前浏览器内计算，不增加 API 请求。
+- 首页卡片显示推荐原因和观看进度。
+- 横向进度手势增加精细定位，亮度和音量记忆当前设备偏好。
+- 保留 200/300 秒目标缓冲、完整手势、自动换源和可关闭的 Cactus Clean Stream。
+- Streamflow 继续保持删除状态。
