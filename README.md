@@ -94,9 +94,6 @@ Cloudflare Pages 连接仓库
 
 HLS 播放列表中的分片和密钥地址会按相同规则重写并再次校验。
 
-### 不写死海报
-
-首页和详情页海报来自所选元数据服务或数据源。豆瓣图片会经过代理、候选域名重试和缓存处理，但不会在代码中为某部影片写死固定海报。
 
 ## 技术结构
 
@@ -119,11 +116,6 @@ cactus-tv/
 
 本版本将 **CactusStreamflow 仙人掌流式缓存** 改为 Cloudflare Cache API 引擎。它只对经过受控代理的 HLS 点播进行边缘缓存与小批量预取，不把视频存到浏览器，也不需要 R2、Queue 或独立 Worker。
 
-```text
-CACTUS_STREAMFLOW.md
-```
-
-从旧 R2 版升级时，删除 `streamflow-worker/`、`migrations/0003_streamflow.sql` 以及 Pages 的 `STREAMFLOW_R2`、`STREAMFLOW_QUEUE` 绑定即可；原来的 `DB` 绑定必须保留。
 
 ## 部署教程
 
