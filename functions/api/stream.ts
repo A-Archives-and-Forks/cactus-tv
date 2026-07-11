@@ -1,9 +1,12 @@
 import { HttpError, ok } from '../_shared/http';
 import { fetchWithTimeout, findProvider, validateHttpsUrl } from '../_shared/providers';
+import { ensureStreamflowSchema, streamflowObjectKey, validObjectId, validStreamflowId } from '../_shared/streamflow';
 import type { AppData, Env, Provider } from '../_shared/types';
 
 const PLAYLIST_LIMIT = 3_000_000;
 const SNIFF_LIMIT = 64 * 1024;
+
+type ByteRange = { start: number; length: number };
 
 function allowedHost(provider: Provider, hostname: string): boolean {
   const allowed = new Set([new URL(provider.baseUrl).hostname.toLowerCase(), ...provider.mediaHosts.map(x => x.toLowerCase())]);
@@ -17,21 +20,148 @@ function assertMediaUrl(provider: Provider, raw: string): URL {
   return url;
 }
 
-function proxied(provider: Provider, absolute: string): string {
-  return `/api/stream?provider=${encodeURIComponent(provider.id)}&url=${encodeURIComponent(absolute)}`;
+function proxied(provider: Provider, absolute: string, streamflowId = '', trackId = '', objectId = ''): string {
+  const params = new URLSearchParams({ provider: provider.id, url: absolute });
+  if (validStreamflowId(streamflowId)) params.set('sf', streamflowId);
+  if (trackId) params.set('sft', trackId);
+  if (objectId && validObjectId(objectId)) params.set('sfi', objectId);
+  return `/api/stream?${params.toString()}`;
 }
 
-function rewriteM3u8(text: string, base: URL, provider: Provider): string {
-  return text.split(/\r?\n/).map(line => {
-    const trimmed = line.trim();
-    if (!trimmed) return line;
-    if (!trimmed.startsWith('#')) {
-      try { return proxied(provider, new URL(trimmed, base).toString()); } catch { return line; }
+function parseAttributes(input: string): Record<string, string> {
+  const result: Record<string, string> = {};
+  const regex = /([A-Z0-9-]+)=("(?:[^"\\]|\\.)*"|[^,]*)/gi;
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(input))) {
+    let value = match[2].trim();
+    if (value.startsWith('"') && value.endsWith('"')) value = value.slice(1, -1).replace(/\\"/g, '"');
+    result[match[1].toUpperCase()] = value;
+  }
+  return result;
+}
+
+function parseByteRange(value: string): { length: number; offset?: number } | null {
+  const match = String(value || '').trim().match(/^(\d+)(?:@(\d+))?$/);
+  if (!match) return null;
+  const length = Number(match[1]);
+  const offset = match[2] == null ? undefined : Number(match[2]);
+  if (!(length > 0) || (offset != null && offset < 0)) return null;
+  return { length, offset };
+}
+
+function rangeSuffix(range?: ByteRange): string {
+  return range ? `-br-${range.start}-${range.length}` : '';
+}
+
+function rewriteUriAttribute(line: string, rewrite: (uri: string) => string): string {
+  return line.replace(/URI="([^"]+)"/g, (_all, uri) => `URI="${rewrite(uri)}"`);
+}
+
+function rewriteM3u8(text: string, base: URL, provider: Provider, streamflowId = '', inheritedTrack = 'main'): string {
+  const lines = text.split(/\r?\n/);
+  const isMaster = lines.some(line => line.trim().startsWith('#EXT-X-STREAM-INF:'));
+  const output: string[] = [];
+  const previousRangeEnd = new Map<string, number>();
+  let mediaSequence = 0;
+  let segmentIndex = 0;
+  let variantIndex = 0;
+  let audioIndex = 0;
+  let otherPlaylistIndex = 0;
+  let mapIndex = 0;
+  let keyIndex = 0;
+  let pendingVariant = false;
+  let pendingRange: { length: number; offset?: number } | null = null;
+
+  const materializeRange = (absolute: string, raw: { length: number; offset?: number } | null): ByteRange | undefined => {
+    if (!raw) return undefined;
+    const start = raw.offset == null ? (previousRangeEnd.get(absolute) || 0) : raw.offset;
+    previousRangeEnd.set(absolute, start + raw.length);
+    return { start, length: raw.length };
+  };
+
+  for (const rawLine of lines) {
+    const trimmed = rawLine.trim();
+    if (!trimmed) { output.push(rawLine); continue; }
+
+    if (trimmed.startsWith('#EXT-X-MEDIA-SEQUENCE:')) {
+      mediaSequence = Math.max(0, Number(trimmed.slice(trimmed.indexOf(':') + 1)) || 0);
+      output.push(rawLine);
+      continue;
     }
-    return line.replace(/URI="([^"]+)"/g, (_all, uri) => {
-      try { return `URI="${proxied(provider, new URL(uri, base).toString())}"`; } catch { return `URI="${uri}"`; }
-    });
-  }).join('\n');
+    if (trimmed.startsWith('#EXT-X-BYTERANGE:')) {
+      pendingRange = parseByteRange(trimmed.slice(trimmed.indexOf(':') + 1));
+      output.push(rawLine);
+      continue;
+    }
+    if (trimmed.startsWith('#EXT-X-STREAM-INF:')) {
+      pendingVariant = true;
+      output.push(rawLine);
+      continue;
+    }
+
+    if (!trimmed.startsWith('#')) {
+      try {
+        const absolute = new URL(trimmed, base).toString();
+        if (isMaster) {
+          const track = pendingVariant ? `v${variantIndex++}` : `m${otherPlaylistIndex++}`;
+          output.push(proxied(provider, absolute, streamflowId, track));
+          pendingVariant = false;
+        } else {
+          const range = materializeRange(absolute, pendingRange);
+          const objectId = `${inheritedTrack}--seg-${mediaSequence + segmentIndex}${rangeSuffix(range)}`;
+          output.push(proxied(provider, absolute, streamflowId, inheritedTrack, objectId));
+          segmentIndex += 1;
+          pendingRange = null;
+        }
+      } catch { output.push(rawLine); }
+      continue;
+    }
+
+    if (trimmed.startsWith('#EXT-X-MEDIA:')) {
+      const attrs = parseAttributes(trimmed.slice(trimmed.indexOf(':') + 1));
+      const type = String(attrs.TYPE || '').toUpperCase();
+      if (!attrs.URI) { output.push(rawLine); continue; }
+      const track = type === 'AUDIO' ? `a${audioIndex++}` : `m${otherPlaylistIndex++}`;
+      output.push(rewriteUriAttribute(rawLine, uri => {
+        try { return proxied(provider, new URL(uri, base).toString(), streamflowId, track); }
+        catch { return uri; }
+      }));
+      continue;
+    }
+
+    if (!isMaster && trimmed.startsWith('#EXT-X-MAP:')) {
+      const attrs = parseAttributes(trimmed.slice(trimmed.indexOf(':') + 1));
+      output.push(rewriteUriAttribute(rawLine, uri => {
+        try {
+          const absolute = new URL(uri, base).toString();
+          const range = materializeRange(absolute, parseByteRange(attrs.BYTERANGE || ''));
+          const objectId = `${inheritedTrack}--map-${mapIndex++}${rangeSuffix(range)}`;
+          return proxied(provider, absolute, streamflowId, inheritedTrack, objectId);
+        } catch { return uri; }
+      }));
+      continue;
+    }
+
+    if (!isMaster && trimmed.startsWith('#EXT-X-KEY:')) {
+      const attrs = parseAttributes(trimmed.slice(trimmed.indexOf(':') + 1));
+      if (String(attrs.METHOD || '').toUpperCase() === 'NONE' || !attrs.URI) {
+        output.push(rawLine);
+      } else {
+        const objectId = `${inheritedTrack}--key-${keyIndex++}`;
+        output.push(rewriteUriAttribute(rawLine, uri => {
+          try { return proxied(provider, new URL(uri, base).toString(), streamflowId, inheritedTrack, objectId); }
+          catch { return uri; }
+        }));
+      }
+      continue;
+    }
+
+    output.push(rawLine.replace(/URI="([^"]+)"/g, (_all, uri) => {
+      try { return `URI="${proxied(provider, new URL(uri, base).toString(), streamflowId, inheritedTrack)}"`; }
+      catch { return `URI="${uri}"`; }
+    }));
+  }
+  return output.join('\n');
 }
 
 function escapeXml(value: string): string {
@@ -40,7 +170,6 @@ function escapeXml(value: string): string {
 
 function normalizeMpdBase(text: string, manifestUrl: URL): string {
   const directory = new URL('.', manifestUrl).toString();
-  // dash.js otherwise resolves relative segments against /api/stream instead of the upstream manifest.
   return text.replace(/<MPD\b[^>]*>/i, match => `${match}<BaseURL>${escapeXml(directory)}</BaseURL>`);
 }
 
@@ -48,7 +177,7 @@ async function fetchRedirectSafe(provider: Provider, url: URL, request: Request)
   let current = url;
   for (let i = 0; i < 4; i += 1) {
     assertMediaUrl(provider, current.toString());
-    const headers = new Headers({ Accept: '*/*', 'User-Agent': 'CactusTV/0.6', ...provider.requestHeaders });
+    const headers = new Headers({ Accept: '*/*', 'User-Agent': 'CactusTV/0.7', ...provider.requestHeaders });
     const range = request.headers.get('range');
     if (range) headers.set('range', range);
     const response = await fetchWithTimeout(current.toString(), { headers, redirect: 'manual' }, 15_000);
@@ -88,10 +217,7 @@ async function readPrefix(body: ReadableStream<Uint8Array> | null, limit = SNIFF
   while (total < limit) {
     const result = await reader.read();
     done = result.done;
-    if (result.value) {
-      chunks.push(result.value);
-      total += result.value.byteLength;
-    }
+    if (result.value) { chunks.push(result.value); total += result.value.byteLength; }
     if (done) break;
   }
   const prefix = new Uint8Array(total);
@@ -144,11 +270,45 @@ function mediaHeaders(upstream: Response, contentType: string): Headers {
   return headers;
 }
 
-export const onRequestGet: PagesFunction<Env, any, AppData> = async ({ request, env }) => {
+async function streamflowHit(env: Env, sessionId: string, objectId: string): Promise<Response | null> {
+  if (!env.STREAMFLOW_R2 || !validStreamflowId(sessionId) || !validObjectId(objectId)) return null;
+  const object = await env.STREAMFLOW_R2.get(streamflowObjectKey(sessionId, objectId));
+  if (!object) return null;
+  const headers = new Headers();
+  object.writeHttpMetadata(headers);
+  headers.set('content-length', String(object.size));
+  headers.set('etag', object.httpEtag);
+  headers.set('access-control-allow-origin', '*');
+  headers.set('x-content-type-options', 'nosniff');
+  headers.set('x-cactus-streamflow', 'HIT');
+  headers.set('cache-control', 'private, max-age=31536000, immutable');
+  const range = object.customMetadata?.range || '';
+  const upstreamStatus = Number(object.customMetadata?.upstreamStatus || 200);
+  if (range) {
+    const [startRaw, lengthRaw] = range.split(':');
+    const start = Number(startRaw);
+    const length = Number(lengthRaw);
+    if (Number.isFinite(start) && Number.isFinite(length) && length > 0) {
+      headers.set('content-range', `bytes ${start}-${start + length - 1}/*`);
+      headers.set('accept-ranges', 'bytes');
+    }
+  }
+  return new Response(object.body, { status: upstreamStatus === 206 || range ? 206 : 200, headers });
+}
+
+export const onRequestGet: PagesFunction<Env, any, AppData> = async ({ request, env, waitUntil }) => {
   const requestUrl = new URL(request.url);
   const params = requestUrl.searchParams;
   const provider = await findProvider(env, params.get('provider') || '');
   if (!provider || !provider.enabled || !provider.proxyEnabled) throw new HttpError(404, '该数据源未启用受控代理', 'PROXY_DISABLED');
+
+  const streamflowId = params.get('sf') || '';
+  const objectId = params.get('sfi') || '';
+  if (streamflowId && objectId) {
+    const hit = await streamflowHit(env, streamflowId, objectId);
+    if (hit) return hit;
+  }
+
   const target = assertMediaUrl(provider, params.get('url') || '');
   const upstream = await fetchRedirectSafe(provider, target, request);
   if (!upstream.ok && upstream.status !== 206) throw new HttpError(502, `媒体上游返回 HTTP ${upstream.status}`, 'MEDIA_UPSTREAM_ERROR');
@@ -183,12 +343,21 @@ export const onRequestGet: PagesFunction<Env, any, AppData> = async ({ request, 
     }
     if (bytes.byteLength > PLAYLIST_LIMIT) throw new HttpError(502, '播放列表过大', 'PLAYLIST_TOO_LARGE');
     const text = new TextDecoder('utf-8', { fatal: false }).decode(bytes);
-    return new Response(rewriteM3u8(text, finalUrl, provider), {
+    const trackId = (params.get('sft') || 'main').replace(/[^a-zA-Z0-9._-]/g, '').slice(0, 40) || 'main';
+    if (env.DB && validStreamflowId(streamflowId) && /^(?:main|v\d+)$/.test(trackId)) {
+      waitUntil(ensureStreamflowSchema(env).then(() => env.DB!.prepare(`INSERT INTO streamflow_hints
+        (session_id, track_id, playlist_url, updated_at) VALUES (?, ?, ?, ?)
+        ON CONFLICT(session_id) DO UPDATE SET track_id = excluded.track_id,
+          playlist_url = excluded.playlist_url, updated_at = excluded.updated_at`)
+        .bind(streamflowId, trackId, finalUrl.toString(), Date.now()).run()).catch(() => {}));
+    }
+    return new Response(rewriteM3u8(text, finalUrl, provider, streamflowId, trackId), {
       headers: {
         'content-type': 'application/vnd.apple.mpegurl; charset=utf-8',
         'cache-control': 'private, max-age=10, stale-while-revalidate=20',
         'access-control-allow-origin': '*',
         'x-cactus-media-kind': 'hls',
+        ...(streamflowId ? { 'x-cactus-streamflow': 'MANIFEST' } : {}),
       },
     });
   }
@@ -223,8 +392,8 @@ export const onRequestGet: PagesFunction<Env, any, AppData> = async ({ request, 
 
   const headers = mediaHeaders(upstream, contentType);
   headers.set('x-cactus-media-kind', kind || 'media');
-  if (kind === 'dash') headers.set('content-type', 'application/dash+xml');
-  else if (!headers.get('content-type') || contentType.includes('text/plain')) headers.set('content-type', 'application/octet-stream');
+  if (streamflowId && objectId) headers.set('x-cactus-streamflow', 'MISS');
+  if (!headers.get('content-type') || contentType.includes('text/plain')) headers.set('content-type', 'application/octet-stream');
   const body = prefix.byteLength ? combinedBody(prefix, rest) : rest;
   return new Response(body, { status: upstream.status, headers });
 };
