@@ -1,6 +1,6 @@
-import { api } from './api.js?v=1.2.1';
-import { store } from './storage.js?v=1.2.1';
-import { buildPersonalizedHome } from './recommend.js?v=1.2.1';
+import { api } from './api.js?v=1.2.2';
+import { store } from './storage.js?v=1.2.2';
+import { buildPersonalizedHome } from './recommend.js?v=1.2.2';
 
 const $ = selector => document.querySelector(selector);
 const els = {
@@ -115,8 +115,8 @@ async function ensurePlayerModules() {
   if (playerApi && playerUI) return playerApi;
   if (!playerModulesPromise) {
     playerModulesPromise = Promise.all([
-      import('./player.js?v=1.2.1'),
-      import('./player-ui.js?v=1.2.1'),
+      import('./player.js?v=1.2.2'),
+      import('./player-ui.js?v=1.2.2'),
     ]).then(([apiModule, uiModule]) => {
       playerApi = apiModule;
       playerUI = uiModule.createPlayerUI({

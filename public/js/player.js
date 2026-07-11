@@ -559,20 +559,30 @@ function deviceProfile() {
   const constrained = Boolean(connection.saveData || /(^|-)2g$/i.test(connection.effectiveType || '') || (lowMemory && lowCpu));
   const mobile = matchMedia('(max-width: 900px)').matches || matchMedia('(pointer: coarse)').matches;
 
-  // Stable startup first, deep local buffer after playback proves healthy.
-  const startupBuffer = constrained ? 24 : mobile ? 45 : 60;
-  const midBuffer = constrained ? 60 : mobile ? 100 : 150;
+  // Keep the deep buffer active from the first HLS load. Limiting the initial
+  // target to 45/60 seconds made hls.js stop requesting as soon as that small
+  // window filled, which sharply reduced sustained download throughput.
   const targetBuffer = constrained ? 90 : mobile ? 200 : 300;
+  const memorySafeBuffer = constrained ? 60 : mobile ? 100 : 150;
   const maxBuffer = constrained ? 140 : mobile ? 300 : 450;
   const backBuffer = constrained ? 36 : mobile ? 100 : 160;
+  // Private-cinema profile: allow the player to keep a much larger byte
+  // reservoir while the time window remains bounded by targetBuffer/maxBuffer.
+  // maxBufferSize is a ceiling, not an eager allocation; memory-pressure events
+  // below shrink it automatically instead of letting the tab become unstable.
   const maxBufferBytes = constrained
-    ? 128 * 1024 * 1024
+    ? 192 * 1024 * 1024
+    : mobile
+      ? (memory >= 8 ? 768 : memory >= 4 ? 512 : 384) * 1024 * 1024
+      : (memory >= 8 ? 1536 : 896) * 1024 * 1024;
+  const bufferByteFloor = constrained
+    ? 96 * 1024 * 1024
     : mobile
       ? (memory >= 8 ? 384 : 256) * 1024 * 1024
       : (memory >= 8 ? 768 : 512) * 1024 * 1024;
   return {
     constrained, mobile, slowNetwork, downlink, lowMemory, lowCpu, memory, cores,
-    startupBuffer, midBuffer, targetBuffer, maxBuffer, backBuffer, maxBufferBytes,
+    targetBuffer, memorySafeBuffer, maxBuffer, backBuffer, maxBufferBytes, bufferByteFloor,
   };
 }
 
@@ -600,11 +610,9 @@ async function playWithHls(session) {
   const profile = deviceProfile();
   const { constrained, mobile, slowNetwork, downlink } = profile;
   const proxied = isSameOriginProxy(session.url);
-  // The Network Information API is intentionally coarse and often reports only 2–4 Mbps
-  // even on much faster Wi-Fi. Use it only as a floor signal, never as a hard startup ceiling.
-  const reportedEstimate = downlink > 0 ? downlink * 1_000_000 : 0;
-  const baselineEstimate = slowNetwork ? 1_500_000 : mobile ? 10_000_000 : 20_000_000;
-  const defaultEstimate = Math.max(baselineEstimate, Math.min(100_000_000, reportedEstimate));
+  const defaultEstimate = downlink
+    ? Math.max(900000, Math.min(12_000_000, downlink * 850000))
+    : mobile ? 2_800_000 : 4_500_000;
   session.bufferTarget = profile.targetBuffer;
   const hls = new Hls({
     enableWorker: true,
@@ -617,15 +625,14 @@ async function playWithHls(session) {
     startFragPrefetch: true,
     testBandwidth: true,
     abrEwmaDefaultEstimate: defaultEstimate,
-    abrEwmaFastVoD: 1.5,
-    abrEwmaSlowVoD: 5,
+    abrEwmaFastVoD: 2,
+    abrEwmaSlowVoD: 7,
     abrMaxWithRealBitrate: true,
-    abrBandWidthFactor: slowNetwork ? 0.72 : 0.92,
-    abrBandWidthUpFactor: slowNetwork ? 0.55 : 0.85,
+    abrBandWidthFactor: slowNetwork ? 0.72 : 0.88,
+    abrBandWidthUpFactor: slowNetwork ? 0.55 : 0.76,
     maxStarvationDelay: slowNetwork ? 2 : 3.5,
     maxLoadingDelay: slowNetwork ? 2.5 : 5,
-    // Fill the requested local buffer immediately. hls.js still downloads sequentially and
-    // respects the byte cap, so this restores throughput without creating parallel fetch storms.
+    // Keep the full local buffer target active immediately.
     backBufferLength: profile.backBuffer,
     maxBufferLength: profile.targetBuffer,
     maxMaxBufferLength: profile.maxBuffer,
@@ -644,7 +651,7 @@ async function playWithHls(session) {
     levelLoadingMaxRetry: 3,
     levelLoadingRetryDelay: 500,
     fragLoadingTimeOut: proxied ? 12000 : 20000,
-    fragLoadingMaxRetry: proxied ? 2 : 4,
+    fragLoadingMaxRetry: proxied ? 1 : 3,
     fragLoadingRetryDelay: 600,
     fragLoadingMaxRetryTimeout: 5000,
     appendErrorMaxRetry: 3,
@@ -666,7 +673,7 @@ async function playWithHls(session) {
       const error = new Error(`播放失败：${data.details || data.type || '未知错误'}`);
       if (!session.verified) finish(error); else failSession(session, error, false);
     };
-    const startupTimer = addTimer(session, () => finish(new Error(manifestReady ? '首个视频分片加载超时' : '播放列表加载超时')), proxied ? 15000 : 22000);
+    const startupTimer = addTimer(session, () => finish(new Error(manifestReady ? '首个视频分片加载超时' : '播放列表加载超时')), proxied ? 13000 : 20000);
     hls.on(Hls.Events.MEDIA_ATTACHED, () => { if (!session.cleaned) hls.loadSource(session.url); });
     hls.on(Hls.Events.MANIFEST_LOADED, (_event, data) => {
       try {
@@ -689,23 +696,15 @@ async function playWithHls(session) {
       applyResume(session);
       try {
         session.autoplayBlocked = !(await safePlay(session.video));
-        await waitForFirstFrame(session, proxied ? 13000 : 18000);
+        await waitForFirstFrame(session, proxied ? 12000 : 17000);
         finish();
       } catch (error) { finish(error); }
     });
     hls.on(Hls.Events.LEVEL_SWITCHED, (_event, data) => emit(session.video, 'quality', { currentLevel: Number(data.level ?? -1), auto: hls.autoLevelEnabled }));
     hls.on(Hls.Events.FRAG_LOADED, (_event, data) => {
       const loaded = Number(data?.stats?.loaded || 0);
-      const loading = data?.stats?.loading || {};
-      const transferStart = Number(loading.first || loading.start || 0);
-      const transferEnd = Number(loading.end || 0);
-      const durationMs = Math.max(1, transferEnd - transferStart);
-      if (loaded && transferEnd > transferStart) {
-        const measured = Math.round((loaded * 8 * 1000) / durationMs);
-        session.bandwidth = session.bandwidth
-          ? Math.round(session.bandwidth * 0.35 + measured * 0.65)
-          : measured;
-      }
+      const durationMs = Math.max(1, Number(data?.stats?.loading?.end || 0) - Number(data?.stats?.loading?.start || 0));
+      if (loaded) session.bandwidth = Math.round((loaded * 8 * 1000) / durationMs);
     });
     hls.on(Hls.Events.FRAG_BUFFERED, () => {
       session.networkRecoveries = 0; session.mediaRecoveries = 0;
@@ -728,10 +727,18 @@ async function playWithHls(session) {
           emit(session.video, 'state', { state: 'buffering' });
         }
         if (/bufferFullError/i.test(detail)) {
-          const safeTarget = Math.max(profile.startupBuffer, Math.min(session.bufferTarget || profile.targetBuffer, profile.midBuffer));
+          const safeTarget = Math.min(session.bufferTarget || profile.targetBuffer, profile.memorySafeBuffer);
+          const currentByteCeiling = Number(hls.config.maxBufferSize || profile.maxBufferBytes);
+          const safeByteCeiling = Math.max(profile.bufferByteFloor, Math.floor(currentByteCeiling * 0.72));
           hls.config.maxBufferLength = safeTarget;
+          hls.config.maxBufferSize = safeByteCeiling;
           session.bufferTarget = safeTarget;
-          emit(session.video, 'bufferTarget', { engine: 'hls.js', target: safeTarget, reason: 'memory-pressure' });
+          emit(session.video, 'bufferTarget', {
+            engine: 'hls.js',
+            target: safeTarget,
+            maxBufferBytes: safeByteCeiling,
+            reason: 'memory-pressure',
+          });
         }
         return;
       }
