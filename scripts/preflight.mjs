@@ -34,7 +34,7 @@ try {
 
 try {
   const html = await readFile('public/index.html', 'utf8');
-  for (const ref of ['/styles.css?v=1.2.7', '/js/app.js?v=1.2.7']) {
+  for (const ref of ['/styles.css?v=1.2.8', '/js/app.js?v=1.2.8']) {
     if (!html.includes(ref)) failures.push(`首页缺少或未升级资源引用：${ref}`);
   }
   if (/登录 Cactus TV|loginForm|authDialog/.test(html)) failures.push('首页仍包含登录界面');
@@ -45,7 +45,7 @@ try {
 
 try {
   const app = await readFile('public/js/app.js', 'utf8');
-  for (const token of ['applyCleanStream', "import('./player.js?v=1.2.7')", "import('./player-ui.js?v=1.2.7')", 'buildPersonalizedHome']) {
+  for (const token of ['applyCleanStream', "import('./player.js?v=1.2.8')", "import('./player-ui.js?v=1.2.8')", 'buildPersonalizedHome']) {
     if (!app.includes(token)) failures.push(`前端主程序缺少：${token}`);
   }
   if (/sendStreamflowHeartbeat|prepareStreamflow|streamflowEnabled/.test(app)) failures.push('前端仍包含主动 Streamflow 逻辑');
@@ -60,21 +60,21 @@ try {
 
 try {
   const player = await readFile('public/js/player.js', 'utf8');
-  for (const token of ['maxBufferLength: profile.targetBuffer', 'memorySafeBuffer', 'requestSessionWakeLock', 'emergencyDownshift', 'capLevelOnFPSDrop', 'abrMaxWithRealBitrate', 'requestVideoFrameCallback', 'recoverVisualFreeze', 'scheduleSeekFrameVerification']) {
+  for (const token of ['maxBufferLength: profile.targetBuffer', 'memorySafeBuffer', 'requestSessionWakeLock', 'emergencyDownshift', 'capLevelOnFPSDrop', 'abrMaxWithRealBitrate', 'requestVideoFrameCallback', 'recoverVisualFreeze', 'scheduleSeekFrameVerification', 'startPosition: session.resumeAt', 'setTrustedDuration', 'TIMELINE_CORRUPTED']) {
     if (!player.includes(token)) failures.push(`Cactus Player 2.0 播放内核缺少：${token}`);
   }
 } catch {}
 
 try {
   const gestures = await readFile('public/js/player-ui.js', 'utf8');
-  for (const token of ['GESTURE_THRESHOLD', 'AXIS_LOCK_RATIO', 'showTapRipple', 'requestAnimationFrame']) {
+  for (const token of ['GESTURE_THRESHOLD', 'AXIS_LOCK_RATIO', 'showTapRipple', 'requestAnimationFrame', 'effectiveDuration', 'cactus:duration']) {
     if (!gestures.includes(token)) failures.push(`手势引擎缺少：${token}`);
   }
 } catch {}
 
 try {
   const stream = await readFile('functions/api/stream.ts', 'utf8');
-  for (const token of ['x-cactus-cleanstream', 'cleanHlsPlaylist', 'allowedHost']) {
+  for (const token of ['x-cactus-cleanstream', 'cleanHlsPlaylist', 'allowedHost', 'timeline-sensitive']) {
     if (!stream.includes(token)) failures.push(`Cactus Clean Stream 缺少：${token}`);
   }
 } catch {}
