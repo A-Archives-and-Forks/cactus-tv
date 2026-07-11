@@ -1,6 +1,6 @@
 # Cactus TV
 
-当前版本：**v0.8.0**
+当前版本：**v0.8.2**
 
 Cactus TV 是一个部署在 Cloudflare Pages 上的私人影视检索与播放前端。它提供首页推荐、聚合搜索、片源切换、HLS 播放、观看记录、字幕和管理后台，但**项目本身不内置、不提供、也不推荐任何影视数据源**。
 
@@ -32,7 +32,7 @@ TG频道 https://t.me/CactusFreeTv
 - 豆瓣海报代理、缓存与失败重试
 - 播放错误、接口错误和空状态提示
 - Cloudflare Cache API 搜索缓存与最多 5 路上游并发控制
-- CactusStreamflow 仙人掌流式缓存：观看超过三分之一后，使用 Cloudflare Cache API 边看边缓存并预取后续 HLS 分片
+- CactusStreamflow 仙人掌流式缓存：从开始播放就通过缓存游标持续向后预取至少 600 秒 HLS 分片，并在播放器中显示覆盖秒数、分片统计和实际命中率
 
 ### 管理后台
 
@@ -94,6 +94,9 @@ Cloudflare Pages 连接仓库
 
 HLS 播放列表中的分片和密钥地址会按相同规则重写并再次校验。
 
+### 不写死海报
+
+首页和详情页海报来自所选元数据服务或数据源。豆瓣图片会经过代理、候选域名重试和缓存处理，但不会在代码中为某部影片写死固定海报。
 
 ## 技术结构
 
@@ -114,8 +117,17 @@ cactus-tv/
 
 ## CactusStreamflow
 
-本版本将 **CactusStreamflow 仙人掌流式缓存** 改为 Cloudflare Cache API 引擎。它只对经过受控代理的 HLS 点播进行边缘缓存与小批量预取，不把视频存到浏览器，也不需要 R2、Queue 或独立 Worker。
+**CactusStreamflow 仙人掌流式缓存** 使用 Cloudflare Cache API。播放器识别到 HLS 和有效时长后就立即建立向后的滚动窗口：目标至少覆盖未来 600 秒；若“剩余时长的一半”更长，则继续以该区间为目标。每次 Pages Function 只处理一小批分片，并把“缓存游标”保存到当前边缘节点，下一批从上次结束位置继续，而不是反复扫描开头。
 
+播放器暂停后仍会每 7 秒请求下一批，覆盖目标后自动停止；播放中约每 10 秒续一批。播放器左上角会显示真实的缓存覆盖秒数、Cloudflare 新增/复用分片数量，以及 hls.js 能读取到的实际 HIT/MISS 命中率。原生 HLS 浏览器只能显示预取进度，无法读取每个分片的响应头。
+
+它不把视频存到浏览器，也不需要 R2、Queue、独立 Worker或信用卡。Cache API 是临时、单数据中心边缘缓存，不等于永久离线下载。
+
+```text
+CACTUS_STREAMFLOW.md
+```
+
+从旧 R2 版升级时，删除 `streamflow-worker/`、`migrations/0003_streamflow.sql` 以及 Pages 的 `STREAMFLOW_R2`、`STREAMFLOW_QUEUE` 绑定即可；原来的 `DB` 绑定必须保留。
 
 ## 部署教程
 

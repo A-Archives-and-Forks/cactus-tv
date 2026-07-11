@@ -1,4 +1,4 @@
-# Cactus TV v0.8.0 部署教程（Fork + Cloudflare Pages）
+# Cactus TV v0.8.2 部署教程（Fork + Cloudflare Pages）
 
 这份教程使用推荐部署方式：
 
@@ -620,9 +620,9 @@ package.json
 
 ---
 
-# v0.8.0 CactusStreamflow Cache API 升级
+# v0.8.2 CactusStreamflow 全程 600 秒滚动缓存升级
 
-从旧版升级到 v0.8.0 后，仍然只需要原来的 Pages + D1。CactusStreamflow 已删除 R2、Queue 和独立 Worker 依赖。
+从旧版升级到 v0.8.2 后，仍然只需要原来的 Pages + D1。CactusStreamflow 使用 Cache API，从开始播放就维持前方至少 600 秒的滚动预取，并保留暂停续批和播放器性能面板；仍不需要 R2、Queue 或独立 Worker。
 
 完整说明：
 
@@ -632,7 +632,7 @@ CACTUS_STREAMFLOW.md
 
 升级步骤：
 
-1. 用 v0.8.0 文件覆盖 GitHub 仓库。
+1. 在自己的 Fork 中同步或提交 v0.8.2 代码。
 2. 删除仓库里的 `streamflow-worker/`。
 3. 删除 `migrations/0003_streamflow.sql`。
 4. 在 Pages Settings → Bindings 中删除 `STREAMFLOW_R2` 和 `STREAMFLOW_QUEUE`（如果以前添加过）。
