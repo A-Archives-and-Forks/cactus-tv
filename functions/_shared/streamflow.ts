@@ -6,7 +6,7 @@ import type { Env, Provider } from './types';
 export const STREAMFLOW_OVERLAP_SECONDS = 18;
 export const STREAMFLOW_CACHE_TTL_SECONDS = 7 * 24 * 60 * 60;
 export const STREAMFLOW_HINT_TTL_SECONDS = 24 * 60 * 60;
-export const STREAMFLOW_MAX_PREFETCH_OBJECTS = 9;
+export const STREAMFLOW_MAX_PREFETCH_OBJECTS = 6;
 export const STREAMFLOW_MIN_AHEAD_SECONDS = 600;
 export const STREAMFLOW_STATUS_TTL_SECONDS = 24 * 60 * 60;
 
@@ -105,7 +105,9 @@ export function cacheWindow(position: number, duration: number): { eligible: boo
   }
   const start = Math.max(0, position - STREAMFLOW_OVERLAP_SECONDS);
   const remaining = Math.max(0, duration - position);
-  const desiredAhead = Math.max(STREAMFLOW_MIN_AHEAD_SECONDS, remaining / 2);
+  // Keep a fixed rolling window. The previous remaining/2 rule could trigger
+  // an hour of background downloads on long films and compete with playback.
+  const desiredAhead = Math.min(STREAMFLOW_MIN_AHEAD_SECONDS, remaining);
   const end = Math.min(duration, position + desiredAhead);
   return { eligible: end > start + 5, start, end };
 }
@@ -494,7 +496,9 @@ function parseMediaPlaylist(text: string, base: URL, trackId: string): PlannedSe
 }
 
 function prefetchLimit(phase: string): number {
-  return STREAMFLOW_MAX_PREFETCH_OBJECTS;
+  if (phase === 'paused') return STREAMFLOW_MAX_PREFETCH_OBJECTS;
+  if (phase === 'playing') return 4;
+  return 0;
 }
 
 async function cachePlannedObject(input: StreamflowPrefetchInput, object: PlannedObject): Promise<'hit' | 'stored' | 'skipped'> {
