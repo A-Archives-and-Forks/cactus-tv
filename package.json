@@ -1,8 +1,8 @@
 {
   "name": "cactus-tv",
-  "version": "1.2.9",
+  "version": "1.3.0",
   "private": true,
-  "description": "Cactus Playback Stability Core with preserved-position resume and failover, seek-safe video-frame recovery, trusted HLS duration guards, burst-throughput ABR, repaired continue-watching metadata, mature gestures, personalized recommendations, and optional fail-safe clean-stream filtering.",
+  "description": "Cactus Playback Stability Core v1.3.0 with single-commit seeking, decoded-video-frame confirmation, trusted HLS duration guards, bounded recovery, preserved-position resume and failover, mature gestures, personalized recommendations, and optional fail-safe clean-stream filtering.",
   "scripts": {
     "dev": "wrangler pages dev public",
     "vendor": "node -e \"const fs=require('node:fs');fs.copyFileSync('node_modules/hls.js/dist/hls.min.js','public/vendor/hls.min.js');fs.copyFileSync('node_modules/dashjs/dist/legacy/umd/dash.all.min.js','public/vendor/dash.all.min.js');fs.copyFileSync('node_modules/dashjs/dist/legacy/umd/dash.all.min.js.LICENSE.txt','public/vendor/dash.all.min.js.LICENSE.txt')\"",
