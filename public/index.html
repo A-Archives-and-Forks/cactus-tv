@@ -7,10 +7,10 @@
   <meta name="description" content="Cactus TV" />
   <title>Cactus TV</title>
   <link rel="icon" href="/assets/cactus.svg" type="image/svg+xml" />
-  <link rel="modulepreload" href="/js/app.js?v=1.2.7" />
-  <link rel="modulepreload" href="/js/api.js?v=0.9.0" />
-  <link rel="modulepreload" href="/js/storage.js?v=0.9.0" />
-  <link rel="stylesheet" href="/styles.css?v=1.2.7" />
+  <link rel="modulepreload" href="/js/app.js?v=1.3.0" />
+  <link rel="modulepreload" href="/js/api.js?v=1.3.0" />
+  <link rel="modulepreload" href="/js/storage.js?v=1.3.0" />
+  <link rel="stylesheet" href="/styles.css?v=1.3.0" />
 </head>
 <body>
   <header class="topbar" id="topbar">
@@ -171,7 +171,7 @@
       <label class="setting-row"><span><strong>恢复播放进度</strong><small>从上次停止的位置继续</small></span><input id="resumeToggle" type="checkbox" checked /></label>
       <label class="setting-row"><span><strong>播放失败自动换源</strong><small>保留当前进度并尝试其他线路或数据源</small></span><input id="failoverToggle" type="checkbox" checked /></label>
       <label class="setting-row"><span><strong>自动播放下一集</strong><small>播放结束后倒计时进入下一集</small></span><input id="autoNextToggle" type="checkbox" checked /></label>
-      <label class="setting-row"><span><strong>Cactus Clean Stream</strong><small>实验性过滤 HLS 中带明确广告标记或广告地址的分片；仅对受控代理线路生效</small></span><input id="cleanStreamToggle" type="checkbox" checked /></label>
+      <label class="setting-row"><span><strong>Cactus Clean Stream</strong><small>实验性过滤 HLS 中带明确广告标记或广告地址的分片；为保证拖拽与续播稳定，默认关闭</small></span><input id="cleanStreamToggle" type="checkbox" /></label>
       <label class="setting-row"><span><strong>个性化推荐</strong><small>仅使用收藏、观看进度和内容类型在本机轻量计算，不阻塞首页</small></span><input id="recommendationToggle" type="checkbox" checked /></label>
     </div>
   </dialog>
@@ -179,7 +179,7 @@
   <div id="toast" class="toast hidden" role="status"></div>
 
   <footer><span id="footerName">Cactus TV</span><span id="metadataCredit"></span></footer>
-  <script type="module" src="/js/app.js?v=1.2.7"></script>
-  <script nomodule src="/js/app-legacy.js?v=1.2.7"></script>
+  <script type="module" src="/js/app.js?v=1.3.0"></script>
+  <script nomodule src="/js/app-legacy.js?v=1.3.0"></script>
 </body>
 </html>
