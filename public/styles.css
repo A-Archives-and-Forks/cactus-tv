@@ -1912,3 +1912,92 @@ footer { display: flex; justify-content: space-between; gap: 30px; width: calc(1
     background: rgba(8,8,8,.7);
   }
 }
+
+
+/* v1.3.2 search-grid containment and browser-cache control. */
+.content-section,
+.results-heading,
+.result-filters,
+.media-grid {
+  min-width: 0;
+  max-width: 100%;
+}
+.results-heading > *,
+.result-filters > *,
+.media-grid > .media-card { min-width: 0; }
+.media-grid {
+  width: 100%;
+  overflow: visible;
+}
+.media-grid > .media-card {
+  width: 100%;
+  max-width: 100%;
+}
+.settings-cache-button {
+  width: 100%;
+  min-height: 62px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin: 0;
+  padding: 16px 0;
+  border: 0;
+  border-top: 1px solid var(--line);
+  background: transparent;
+  color: #fff;
+  text-align: left;
+  cursor: pointer;
+}
+.settings-cache-button > span:first-child {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.settings-cache-button small {
+  color: var(--muted);
+  line-height: 1.45;
+}
+.settings-cache-button-label {
+  flex: 0 0 auto;
+  min-width: 58px;
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 12px;
+  border: 1px solid rgba(255,255,255,.22);
+  border-radius: 4px;
+  background: rgba(255,255,255,.08);
+  font-size: 12px;
+  font-weight: 750;
+}
+.settings-cache-button:hover .settings-cache-button-label,
+.settings-cache-button:focus-visible .settings-cache-button-label {
+  border-color: #fff;
+  background: rgba(255,255,255,.16);
+}
+.settings-cache-button:disabled { cursor: wait; opacity: .58; }
+
+@media (any-pointer: coarse) {
+  .topbar,
+  .content-section {
+    padding-left: max(var(--page-pad), env(safe-area-inset-left));
+    padding-right: max(var(--page-pad), env(safe-area-inset-right));
+  }
+}
+
+/* The previous touch rule forced four tracks through portrait tablet widths.
+   On some Chromium/Brave builds the visual viewport is narrower than the
+   layout viewport, so the fourth card and the settings icon were clipped. */
+@media (orientation: portrait) and (min-width: 701px) and (max-width: 1100px) and (any-pointer: coarse) {
+  .media-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .result-filters { overflow: hidden; }
+  .filter-group { min-width: 0; max-width: 100%; }
+}
+
+@media (max-width: 520px) {
+  .settings-cache-button { align-items: flex-start; }
+  .settings-cache-button-label { margin-top: 1px; }
+}
