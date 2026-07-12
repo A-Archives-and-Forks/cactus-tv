@@ -7,10 +7,10 @@
   <meta name="description" content="Cactus TV" />
   <title>Cactus TV</title>
   <link rel="icon" href="/assets/cactus.svg" type="image/svg+xml" />
-  <link rel="modulepreload" href="/js/app.js?v=1.2.9" />
-  <link rel="modulepreload" href="/js/api.js?v=1.2.9" />
-  <link rel="modulepreload" href="/js/storage.js?v=1.2.9" />
-  <link rel="stylesheet" href="/styles.css?v=1.2.9" />
+  <link rel="modulepreload" href="/js/app.js?v=1.3.2" />
+  <link rel="modulepreload" href="/js/api.js?v=1.3.2" />
+  <link rel="modulepreload" href="/js/storage.js?v=1.3.2" />
+  <link rel="stylesheet" href="/styles.css?v=1.3.2" />
 </head>
 <body>
   <header class="topbar" id="topbar">
@@ -173,13 +173,18 @@
       <label class="setting-row"><span><strong>自动播放下一集</strong><small>播放结束后倒计时进入下一集</small></span><input id="autoNextToggle" type="checkbox" checked /></label>
       <label class="setting-row"><span><strong>Cactus Clean Stream</strong><small>实验性识别 HLS 广告段并整段跳过，不删除媒体时间轴；默认关闭</small></span><input id="cleanStreamToggle" type="checkbox" /></label>
       <label class="setting-row"><span><strong>个性化推荐</strong><small>仅使用收藏、观看进度和内容类型在本机轻量计算，不阻塞首页</small></span><input id="recommendationToggle" type="checkbox" checked /></label>
+      <button id="clearBrowserCache" class="settings-cache-button" type="button">
+        <span><strong>清除本地缓存</strong><small>清理本浏览器的接口缓存、静态资源缓存和旧 Service Worker；不会删除 D1、片单、观看历史或播放进度</small></span>
+        <span class="settings-cache-button-label" aria-hidden="true">清除</span>
+      </button>
     </div>
   </dialog>
 
   <div id="toast" class="toast hidden" role="status"></div>
 
   <footer><span id="footerName">Cactus TV</span><span id="metadataCredit"></span></footer>
-  <script type="module" src="/js/app.js?v=1.2.9"></script>
-  <script nomodule src="/js/app-legacy.js?v=1.2.9"></script>
+  <script defer src="/js/cache-controls.js?v=1.3.2"></script>
+  <script type="module" src="/js/app.js?v=1.3.2"></script>
+  <script nomodule src="/js/app-legacy.js?v=1.3.2"></script>
 </body>
 </html>
