@@ -34,7 +34,7 @@ try {
 
 try {
   const html = await readFile('public/index.html', 'utf8');
-  for (const ref of ['/styles.css?v=1.2.8', '/js/app.js?v=1.2.8']) {
+  for (const ref of ['/styles.css?v=1.3.0', '/js/app.js?v=1.3.0']) {
     if (!html.includes(ref)) failures.push(`首页缺少或未升级资源引用：${ref}`);
   }
   if (/登录 Cactus TV|loginForm|authDialog/.test(html)) failures.push('首页仍包含登录界面');
@@ -45,7 +45,7 @@ try {
 
 try {
   const app = await readFile('public/js/app.js', 'utf8');
-  for (const token of ['applyCleanStream', "import('./player.js?v=1.2.8')", "import('./player-ui.js?v=1.2.8')", 'buildPersonalizedHome']) {
+  for (const token of ['applyCleanStream', "import('./player.js?v=1.3.0')", "import('./player-ui.js?v=1.3.0')", 'buildPersonalizedHome']) {
     if (!app.includes(token)) failures.push(`前端主程序缺少：${token}`);
   }
   if (/sendStreamflowHeartbeat|prepareStreamflow|streamflowEnabled/.test(app)) failures.push('前端仍包含主动 Streamflow 逻辑');
@@ -60,7 +60,7 @@ try {
 
 try {
   const player = await readFile('public/js/player.js', 'utf8');
-  for (const token of ['maxBufferLength: profile.targetBuffer', 'memorySafeBuffer', 'requestSessionWakeLock', 'emergencyDownshift', 'capLevelOnFPSDrop', 'abrMaxWithRealBitrate', 'requestVideoFrameCallback', 'recoverVisualFreeze', 'scheduleSeekFrameVerification', 'startPosition: session.resumeAt', 'setTrustedDuration', 'TIMELINE_CORRUPTED']) {
+  for (const token of ['maxBufferLength: profile.targetBuffer', 'memorySafeBuffer', 'requestSessionWakeLock', 'emergencyDownshift', 'capLevelOnFPSDrop', 'abrMaxWithRealBitrate', 'requestVideoFrameCallback', 'recoverVisualFreeze', 'scheduleSeekFrameVerification', 'consumeRecoveryBudget', 'retryStartupFragment', 'setTrustedDuration', 'MAX_REASONABLE_VOD_DURATION', 'MPEG_TS_WRAP_SECONDS', 'durationAnomaly']) {
     if (!player.includes(token)) failures.push(`Cactus Player 2.0 播放内核缺少：${token}`);
   }
 } catch {}
